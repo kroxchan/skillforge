@@ -1,0 +1,160 @@
+skills:
+- avg_effectiveness: 0.9349999999999999
+  capability_gains:
+    creativity: 5.0
+    domain_knowledge: 5.0
+    precision: 20.0
+    reasoning: 10.0
+    speed: -5.0
+    tool_usage: 15.0
+  description: 编程开发专家，处理代码生成、调试、重构等任务
+  domain:
+  - programming
+  - development
+  name: Code Expert Skill
+  path: .cursor/skills/code-expert/SKILL.md
+  quality_tier: L3
+  skill_id: code-expert
+  source: local
+  task_types:
+  - code_generation
+  - refactoring
+  - debugging
+  - code_review
+  - algorithm_design
+  trigger_keywords:
+  - 写代码
+  - 帮我写
+  - 代码
+  - function
+  - Python
+  - JavaScript
+  - debug
+  - refactor
+  usage_count: 1
+- avg_effectiveness: 0.75
+  capability_gains:
+    creativity: 5.0
+    domain_knowledge: 25.0
+    precision: 10.0
+    reasoning: 10.0
+    speed: 0.0
+    tool_usage: 5.0
+  description: SEO 分析与内容优化专家，提升网站搜索排名
+  domain:
+  - marketing
+  - seo
+  - content
+  name: SEO Analysis Skill
+  path: .cursor/skills/seo-analysis/SKILL.md
+  quality_tier: L2
+  skill_id: seo-analysis
+  source: local
+  task_types:
+  - content_analysis
+  - keyword_research
+  - competitor_analysis
+  - content_optimization
+  - backlink_analysis
+  trigger_keywords:
+  - SEO
+  - 搜索引擎优化
+  - 关键词
+  - 网站排名
+  - 内容营销
+  usage_count: 0
+- avg_effectiveness: 0.78
+  capability_gains:
+    creativity: 5.0
+    domain_knowledge: 20.0
+    precision: 15.0
+    reasoning: 15.0
+    speed: -10.0
+    tool_usage: 10.0
+  description: 数据处理与可视化专家，从数据中提取洞察
+  domain:
+  - data_science
+  - analytics
+  name: Data Analysis Skill
+  path: .cursor/skills/data-analysis/SKILL.md
+  quality_tier: L2
+  skill_id: data-analysis
+  source: local
+  task_types:
+  - data_cleaning
+  - statistical_analysis
+  - visualization
+  - report_generation
+  - dashboard_design
+  trigger_keywords:
+  - 数据分析
+  - 统计
+  - 可视化
+  - 报表
+  - CSV
+  - chart
+  usage_count: 0
+- avg_effectiveness: 0.72
+  capability_gains:
+    creativity: 10.0
+    domain_knowledge: 15.0
+    precision: 20.0
+    reasoning: 15.0
+    speed: -15.0
+    tool_usage: 5.0
+  description: 学术研究与调研分析，处理文献综述、事实核查等任务
+  domain:
+  - research
+  - academic
+  name: Research Skill
+  path: .cursor/skills/research/SKILL.md
+  quality_tier: L2
+  skill_id: research
+  source: local
+  task_types:
+  - literature_review
+  - fact_checking
+  - comparative_analysis
+  - report_writing
+  - hypothesis_development
+  trigger_keywords:
+  - 研究
+  - 调研
+  - 文献
+  - 论文
+  - 调查报告
+  usage_count: 0
+- avg_effectiveness: 0.7
+  capability_gains:
+    creativity: 15.0
+    domain_knowledge: 10.0
+    precision: 10.0
+    reasoning: 5.0
+    speed: -10.0
+    tool_usage: 25.0
+  description: 视频处理与媒体制作，处理视频剪辑、格式转换等任务
+  domain:
+  - video
+  - media
+  - content
+  name: Video Production Skill
+  path: .cursor/skills/video-production/SKILL.md
+  quality_tier: L2
+  skill_id: video-production
+  source: local
+  task_types:
+  - video_editing
+  - format_conversion
+  - audio_processing
+  - thumbnail_design
+  - script_writing
+  trigger_keywords:
+  - 视频
+  - 剪辑
+  - FFmpeg
+  - MP4
+  - 字幕
+  - GIF
+  usage_count: 0
+updated_at: '2026-04-15'
+version: '1.0'

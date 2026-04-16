@@ -1,0 +1,123 @@
+# SkillForge 全局配置
+
+# 五态 Gap 阈值（借鉴 KnowSelf 情境判断）
+gap_thresholds:
+  independent_max: 5      # Gap < 5  → 独立，直接执行
+  light_hints_max: 15     # 5 ≤ Gap < 15 → 轻提示，执行后轻描
+  suggest_max: 30          # 15 ≤ Gap < 30 → 建议增强
+  force_max: 50           # 30 ≤ Gap < 50 → 强制增强
+  # Gap ≥ 50 → 超边界，拒绝执行
+
+# Phase 1 预判引擎配置
+prediction:
+  model: "gpt-4o-mini"           # 用于能力预判的模型（轻量即可）
+  prompt_template: "detailed"     # "detailed" | "quick"
+  calibration_enabled: true      # 是否启用预判校准
+
+# Phase 2 Skill 雷达配置
+radar:
+  semantic_search_enabled: false  # 是否启用向量语义检索（需要 ChromaDB）
+  fallback_to_keyword: true       # 向量失败时降级到关键词匹配
+  max_candidates: 5              # 最多返回多少个候选 skill
+
+# Phase 4 评估配置
+evaluation:
+  default_weight:
+    user: 0.6        # 用户评分权重
+    llm_self: 0.3    # LLM 自评权重
+    tool: 0.1        # 工具验证权重
+  patch_threshold: 5   # A < S - 5 → 触发 patch
+  forger_trigger: 3    # 同一 task_type 出现 3 次 → 触发自创建
+
+# 自创建 Skill 配置
+forger:
+  min_trajectories: 3       # 触发自创建最少需要多少条同类轨迹
+  require_user_approval: true  # 草稿是否必须用户审核才能入库
+  max_workflow_steps: 10    # 单个 skill 最大步数
+
+# 数据存储
+storage:
+  registry_path: "skillforge-registry.yaml"   # Registry 路径
+  memory_dir: "memory/"                        # 记忆目录
+  trajectory_retention_days: 90               # 轨迹保留天数
+  reflection_format: "markdown"               # 反思格式
+
+# Stage 3: 多 Agent 协作探索（P2，可选）
+# ⚠️ 警告：以下功能为可选扩展，默认全部关闭
+#   - MAR 多角色辩论评估：仅在支持多 agent 的编程软件中可用（Cursor / Claude Code / Codex 等）
+#   - 向量语义检索：需要安装 chromadb（pip install chromadb）或使用 mock 实现
+stage3:
+  enabled: false   # 总开关，关闭时完全不加载 MAR 和向量模块
+
+  # ── MAR 多角色辩论评估 ──────────────────────────────
+  mar:
+    enabled: false
+    # provider: 多 agent 执行方式
+    #   "cursor"       — Cursor IDE（Task tool），无需额外 API key
+    #   "claude-code"  — Claude Code（--mention 机制），无需额外 API key
+    #   "codex"        — Codex（Agents SDK），需要 OPENAI_API_KEY
+    #   "llm-only"     — 直接调 LLM（无多 agent 环境时的降级）
+    provider: "llm-only"
+    # 当 provider=llm-only 时使用的 LLM 端点
+    llm_endpoint: ""        # 如 "https://api.openai.com/v1/chat/completions"
+    llm_model: "gpt-4o-mini"
+    # Token 优化：单次调用完成所有 Critic 评估（不可拆）
+    single_pass: true
+
+  # ── 向量语义检索 ───────────────────────────────────
+  vector_search:
+    enabled: false
+    # provider: "chroma" | "mock"
+    #   "chroma" — ChromaDB 持久化向量检索（需 pip install chromadb）
+    #   "mock"   — 内存 mock（无需安装 chromadb，开发调试用）
+    provider: "mock"
+    # ChromaDB 配置（仅 provider=chroma 时生效）
+    chroma:
+      persist_dir: ".chroma/"          # ChromaDB 持久化目录
+      model: "all-MiniLM-L6-v2"        # sentence-transformers 模型
+      distance_metric: "cosine"        # "cosine" | "euclidean"
+    # 混合检索权重（关键词 vs 语义）
+    keyword_weight: 0.6
+    semantic_weight: 0.4
+    max_candidates: 5
+
+  # ── 共享索引机制 ───────────────────────────────────
+  # Stage 3 的轨迹数据可用于构建社区共享的 L0 索引
+  # 用户可以选择将自己的轨迹匿名贡献到共享索引（帮助所有用户提升预判精度）
+  shared_index:
+    enabled: false
+    # 共享索引的来源：本地轨迹 / GitHub gist / HTTP endpoint
+    source: "local"       # "local" | "gist" | "http"
+    gist_url: ""          # GitHub gist URL（raw 内容，包含 capability-index.yaml）
+    http_endpoint: ""     # 第三方 L0 聚合服务
+    # 隐私：哪些数据可以共享？
+    #   "none"    — 不共享任何数据
+    #   "index"   — 只共享 capability-index.yaml（统计聚合数据，无具体任务描述）
+    #   "trajectory" — 共享完整轨迹（包含任务描述，需用户明确授权）
+    share_level: "index"
+    auto_pull: true        # 启动时自动拉取共享索引更新
+    auto_push: false       # 评估完成后自动推送本地更新（需用户确认）
+
+# Stage 4: Reflexion Memory 重试闭环（P2，可选）
+stage4:
+  enabled: false
+  reflexion:
+    enabled: false
+    # Phase 1 每次最多注入多少条反思
+    max_entries: 5
+    # 超过多少天的反思不加载
+    max_age_days: 90
+    # delta < 此值才加载（过滤轻微失误，主要保留重大失败）
+    min_delta_threshold: -5.0
+    # Phase 1 前是否注入反思上下文
+    inject_in_phase1: true
+agent_integration:
+  mode: "cursor_rule"    # "cursor_rule" | "api" | "standalone"
+  skill_priority: "high"  # SkillForge 的优先级（高于普通 skill）
+  auto_activate: true     # 是否对所有任务自动激活分析
+
+# 输出控制
+output:
+  verbose: false          # 是否输出详细诊断信息
+  show_predictions: true  # 是否向用户展示预估分数
+  show_recommendations: true  # 是否向用户展示 skill 推荐

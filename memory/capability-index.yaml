@@ -1,0 +1,61 @@
+# Capability Index — SkillForge 记忆索引
+# L0: 能力概要索引（Agent 启动时注入，<500 tokens）
+#
+# 设计依据：
+#   - SkillReducer (2025): tiered architecture，核心常驻 + 补充按需
+#   - SkillRouter (2025): full-text 是关键路由信号，但不可全量注入
+#   - Meta-Policy Reflexion (2025): 提取为 predicate-like rules，减少冗余
+#
+# 格式：task_type → (执行次数, 平均Delta, 趋势, Gap调整值)
+# 更新来源：Phase 4 评估后自动写入
+
+task_type_index:
+  code_generation:
+    count: 0
+    avg_delta: 0.0       # Delta = 实际分 - 预估分（移动平均）
+    trend: stable        # stable | improving | degrading
+    gap_adjustment: 0    # 预判分数的偏差修正值（累计）
+
+  code_review:
+    count: 0
+    avg_delta: 0.0
+    trend: stable
+    gap_adjustment: 0
+
+  research:
+    count: 0
+    avg_delta: 0.0
+    trend: stable
+    gap_adjustment: 0
+
+  seo:
+    count: 0
+    avg_delta: 0.0
+    trend: stable
+    gap_adjustment: 0
+
+  kol_outreach:
+    count: 0
+    avg_delta: 0.0
+    trend: stable
+    gap_adjustment: 0
+
+  data_analysis:
+    count: 0
+    avg_delta: 0.0
+    trend: stable
+    gap_adjustment: 0
+
+  default:
+    count: 0
+    avg_delta: 0.0
+    trend: stable
+    gap_adjustment: 0
+
+# 元信息
+_meta:
+  version: "1.0"
+  updated_at: "2026-04-15"
+  last_task_id: null
+  total_executed: 0
+  global_gap_adjustment: 0  # 全局修正值，补偿系统级预判偏差
