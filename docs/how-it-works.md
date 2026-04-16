@@ -179,3 +179,66 @@ context = loader.load_context("code_generation")
 | **合计** | | **≈ 1,500 tokens** | 远低于 SkillReducer 报告的 10K+ 平均水位 |
 
 参考：SkillReducer (2025) 发现 skill body 60% 是非行动内容，压缩 39% 后质量反而提升 2.8%（less-is-more）。
+
+---
+
+## 可观测性：Dashboard 示例
+
+运行 `skillforge dashboard` 的输出效果：
+
+```
+╭─ SkillForge 记忆索引 Dashboard ──────────────────────────────────────╮
+│ 总执行次数: 12    全局修正值: -3分    最后更新: 2026-04-16             │
+╰──────────────────────────────────────────────────────────────────────╯
+
+                按 Task Type 分组统计（L0 Capability Index）
+ Task Type         执行次数   Avg Delta   趋势           Gap 修正值   最后执行
+ code_generation   7          -3.2分      ↑ improving    -3           2026-04-16
+ research          3          +1.5分      → stable       +1           2026-04-15
+ seo               2          -8.0分      ↓ degrading    -8           2026-04-13
+
+Delta = 实际分 - 预估分（负值=低估，正值=高估）。Gap 修正值用于 Phase 1 校准。
+
+╭─ Phase Timing 统计 ────────────────────────────────────────────────────╮
+│ 最近 12 条记录平均耗时                                                  │
+│ Phase 1: 1ms  Phase 2: 0ms  Phase 3: 0ms  Phase 4: 2ms  总计: 4ms     │
+╰────────────────────────────────────────────────────────────────────────╯
+```
+
+### `memory/timings.yaml` 结构
+
+每次 `run()` 和 `evaluate_and_close()` 都会自动写入：
+
+```yaml
+version: '1.0'
+updated_at: '2026-04-16'
+total_records: 12
+timings:
+- task_id: sf-a1b2c3d4
+  task_type: code_generation
+  gap_state: suggest
+  phase1_ms: 0.8
+  phase2_ms: 0.3
+  phase3_ms: 0.1
+  phase4_ms: 1.2
+  total_ms: 3.4
+  predicted_score: 75.0
+  actual_score: 80.0
+  delta: 5.0
+  outcome: success
+  timestamp: '2026-04-16T14:23:10'
+```
+
+### 通过 Python 获取 Timing 摘要
+
+```python
+from skillforge.tracing import TimingLogger
+
+logger = TimingLogger("memory/timings.yaml")
+summary = logger.summary()
+
+print(f"记录条数: {summary['count']}")
+print(f"平均总耗时: {summary['avg_total_ms']:.0f}ms")
+print(f"各 Phase 平均: {summary['avg_phase_ms']}")
+# {'phase1_ms': 0.8, 'phase2_ms': 0.3, 'phase3_ms': 0.1, 'phase4_ms': 1.4}
+```

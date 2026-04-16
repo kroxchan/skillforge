@@ -151,3 +151,4 @@ class SkillForgeResult(BaseModel):
     effectiveness_updated: bool = False
     decision: Decision = Field(default_factory=Decision)
     phase3_context: str = ""   # Phase 3 构建的增强 prompt（供外部执行）
+    forger_draft_path: Optional[str] = None  # Forger 草稿路径（触发后非 None）

@@ -30,6 +30,9 @@ from skillforge.vector_search import (
 # Stage 4（可选）
 from skillforge.reflexion import ReflectionLoader, format_as_context
 
+# Forger
+from skillforge.forger import count_successful_trajectories, generate_forger_draft
+
 
 # Phase 1 分析 Prompt（供 Agent 直接使用）
 PHASE1_PROMPT_TEMPLATE = """你是一个专业的能力评估专家。请分析以下任务，评估其难度和你的能力匹配度。
@@ -542,6 +545,18 @@ class SkillForgeOrchestrator:
         result.effectiveness_updated = (
             result.trajectory.phase2.selected_skill is not None
         )
+
+        # ── Forger 触发检测 ────────────────────────────────────
+        # 同类任务成功次数 >= forger_trigger（默认 3）时，生成 SKILL.md 草稿
+        forger_cfg = self._config.evaluation
+        successes = count_successful_trajectories(self.memory_dir, result.task_type)
+        if len(successes) >= forger_cfg.forger_trigger:
+            draft_path = generate_forger_draft(
+                task_type=result.task_type,
+                trajectories=successes,
+                memory_dir=self.memory_dir,
+            )
+            result.forger_draft_path = draft_path
 
         return result
 

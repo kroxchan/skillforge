@@ -18,32 +18,69 @@
 
 ---
 
+## Registry 文件格式
+
+`skillforge-registry.yaml` 的完整格式（实际文件片段）：
+
+```yaml
+version: '1.0'
+updated_at: '2026-04-16'
+skills:
+- skill_id: code-expert          # 唯一 ID，在 Python API 中用于查找
+  name: Code Expert Skill        # 展示名称
+  description: 编程开发专家，处理代码生成、调试、重构等任务
+  domain:
+  - programming
+  - development
+  task_types:                    # 适用的任务类型（Phase 2 匹配时用）
+  - code_generation
+  - refactoring
+  - debugging
+  capability_gains:              # 各维度能补多少分（0-100 量纲）
+    precision: 20.0
+    tool_usage: 15.0
+    reasoning: 10.0
+    creativity: 5.0
+    domain_knowledge: 5.0
+    speed: -5.0                  # 负值表示该维度会变慢（可接受的代价）
+  quality_tier: L3               # L1（基础）/ L2（标准）/ L3（专业）
+  usage_count: 3                 # 使用次数（自动更新）
+  avg_effectiveness: 0.93        # 历史平均效果（Phase 4 自动校准）
+  source: local                  # local / community / autoforge
+  path: .cursor/skills/code-expert/SKILL.md
+  trigger_keywords:
+  - 写代码
+  - Python
+  - debug
+```
+
 ## 添加新 Skill
 
 ### 1. 在 Registry 中添加 entry
 
-编辑 `skillforge-registry.yaml`：
+编辑 `skillforge-registry.yaml`，在 `skills:` 列表末尾追加：
 
 ```yaml
-skills:
-  - skill_id: my-custom-skill         # 唯一 ID，用于 Python API 引用
-    name: My Custom Skill
-    description: 一句话描述这个 skill 能做什么
-    domain:
-      - programming                   # 领域标签（可多个）
-    task_types:
-      - code_generation               # 适用的任务类型
-      - refactoring
-    capability_gains:                 # 各维度的加分效果
-      precision: 15
-      tool_usage: 10
-    quality_tier: L2                  # L1（基础）/ L2（标准）/ L3（专业）
-    trigger_keywords:
-      - 写代码
-      - implement
-      - build
-    path: skills/my-custom-skill/SKILL.md   # SKILL.md 文件路径
-    source: local                           # local / community / autoforge
+- skill_id: my-custom-skill
+  name: My Custom Skill
+  description: 一句话描述这个 skill 能做什么
+  domain:
+  - programming
+  task_types:
+  - code_generation
+  - refactoring
+  capability_gains:
+    precision: 15.0
+    tool_usage: 10.0
+  quality_tier: L2
+  usage_count: 0
+  avg_effectiveness: 0.70        # 新 skill 默认 0.70，使用后自动校准
+  source: local
+  path: skills/my-custom-skill/SKILL.md
+  trigger_keywords:
+  - 写代码
+  - implement
+  - build
 ```
 
 ### 2. 创建对应的 SKILL.md
@@ -148,15 +185,67 @@ Phase 4 评估完成后，SkillForge 自动更新 skill 的历史效果：
 
 ## Skill 自创建（Forger）
 
-当同一类任务成功执行 3 次及以上时，SkillForge 会自动生成 SKILL.md 草稿：
+当同一 task_type 的成功轨迹达到 `forger_trigger`（默认 3 次）后，`evaluate_and_close()` 会自动触发 Forger，从成功轨迹中提炼生成 `SKILL.md` 草稿。
 
-```
-检测到 code_generation 类任务已成功执行 3 次。
-已生成 SKILL.md 草稿，建议审核后保存：
-  → memory/self-made/code-gen-pattern-2026-04-16.md
+### 触发条件
+
+1. `evaluate_and_close()` 被调用
+2. 当前 task_type 的 L1 轨迹中，成功条目 ≥ `forger_trigger`（默认 3）
+3. 今天尚未生成过同 task_type 的草稿
+
+### 草稿格式示例
+
+```markdown
+---
+skill_id: code_generation-skill
+name: Code Generation Skill
+description: "自动生成草稿 — 请补充描述"
+domain: []
+task_types:
+  - code_generation
+capability_gains:
+  precision: 10
+  tool_usage: 10
+quality_tier: L2
+trigger_keywords: []
+---
+
+# Code Generation Skill
+
+> ⚠️ Forger 自动生成草稿
+> 基于 3 条成功轨迹（平均得分 78），由 SkillForge Forger 提炼生成。
+
+## Trigger Conditions
+- 任务类型为 `code_generation`
+- （补充更多触发条件）
+
+## Workflow
+1. 分析任务需求，确定输入和预期输出
+2. （补充步骤）
+
+## Successful Cases
+  1. [sf-xxx] 写 Python 异步爬虫  →  A=80
+  2. [sf-yyy] 实现 REST API       →  A=75
+
+## Known Limitations
+- （请补充）
 ```
 
-草稿需要你手动审核确认后才会入库（`skillforge push memory/self-made/xxx.md`），避免低质量 skill 污染 Registry。
+### 在代码中检测草稿
+
+```python
+result = orch.evaluate_and_close(result, actual_score=80)
+
+if result.forger_draft_path:
+    print(f"🔨 Forger 触发！草稿位于: {result.forger_draft_path}")
+    print("请审核草稿后运行 `skillforge push` 入库")
+```
+
+草稿需要你手动审核确认后才会入库，避免低质量 skill 污染 Registry：
+
+```bash
+skillforge push memory/self-made/code_generation-draft-2026-04-16.md
+```
 
 ---
 

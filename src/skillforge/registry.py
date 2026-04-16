@@ -34,15 +34,38 @@ class SkillRegistry:
             self.skills.append(Skill(**entry))
 
     def save(self):
-        """保存 Registry 到 YAML 文件"""
+        """保存 Registry 到 YAML 文件（保持字段顺序，浮点数保留 2 位小数）"""
+        def _clean_skill(skill: Skill) -> dict:
+            d = skill.model_dump()
+            # 保持可读顺序
+            ordered = {
+                "skill_id": d["skill_id"],
+                "name": d["name"],
+                "description": d.get("description", ""),
+                "domain": d.get("domain", []),
+                "task_types": d.get("task_types", []),
+                "capability_gains": {
+                    k: round(float(v), 2)
+                    for k, v in d.get("capability_gains", {}).items()
+                },
+                "quality_tier": d.get("quality_tier", "L2"),
+                "usage_count": d.get("usage_count", 0),
+                "avg_effectiveness": round(float(d.get("avg_effectiveness", 0.7)), 2),
+                "source": d.get("source", "local"),
+                "path": d.get("path", ""),
+                "trigger_keywords": d.get("trigger_keywords", []),
+            }
+            return ordered
+
         data = {
             "version": "1.0",
             "updated_at": self._today(),
-            "skills": [skill.model_dump() for skill in self.skills]
+            "skills": [_clean_skill(skill) for skill in self.skills],
         }
-        
+
         with open(self.registry_path, "w", encoding="utf-8") as f:
-            yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+            yaml.dump(data, f, allow_unicode=True, default_flow_style=False,
+                      sort_keys=False)
 
     def add(self, skill: Skill):
         """添加新 Skill"""
