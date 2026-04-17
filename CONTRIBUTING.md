@@ -20,9 +20,8 @@ source .venv/bin/activate  # macOS/Linux
 pip install -e ".[dev]"
 
 # 4. 运行测试
-python tests/test_skillforge.py
-# 或
-pytest tests/ -v
+pytest tests/ -q
+# 全部 159 测试通过（v0.2.9-review 基线）
 ```
 
 ---
@@ -178,24 +177,36 @@ L2 memory/reflections.md   <2K tokens   Phase 4 前读取，不注入 prompt
 
 ## 新增 Skill 指南
 
-在 `skillforge-registry.yaml` 添加新 skill 时：
+v0.2.6 起 Registry 改为**涌现式生长**，优先通过 Forger 自动生成草稿：
+
+```bash
+sf demand-queue         # 查看距 Forger 阈值（count ≥ 5）还差多远
+sf forge                # 查看哪些 task_type 可触发
+sf push memory/self-made/xxx-draft-2026-04-17.md    # 审核草稿后入库
+```
+
+如需手动添加，Registry entry 格式（v0.2.0+ 只保留 3 维 capability_gains）：
 
 ```yaml
 - skill_id: my-new-skill
   name: My New Skill
   domain: [your_domain]
-  task_types: [task_type]
+  task_types: [your_task_type]
   capability_gains:
     precision: 10
-    creativity: 5
-  quality_tier: "L2"   # L1=生产级, L2=社区级, L3=实验级
-  avg_effectiveness: 0.7  # 新 skill 默认 0.7
+    reasoning: 5
+    tool_knowledge: 10
+  quality_tier: "L2"        # L1=轻量，L2=标准，L3=专业
+  avg_effectiveness: 0.7    # 新 skill 默认 0.7，使用后 EMA 自动校准
+  source: local             # local / community / autoforge
 ```
+
+> ⚠ 旧字段 `creativity` / `speed` / `domain_knowledge` / `tool_usage` 已在 v0.2.0 废弃，若出现会被忽略。
 
 推荐通过 CLI 添加（自动校验格式）：
 
 ```bash
-skillforge push ./my-new-skill/
+sf push ./my-new-skill/SKILL.md
 ```
 
 ---

@@ -8,7 +8,7 @@
 
 ### 为什么需要 MAR？
 
-Phase 4 的默认自评存在确认偏误——Agent 给自己打分时容易合理化失败。MAR（Multi-Agent Reflexion）引入三个不同角色的批评者，解决"思维退化"问题：
+Phase 4 的默认 rating 识别（v0.2.3 起 actual=predicted 基线）在复杂任务上可能漏掉真实质量问题——Agent 和用户都倾向于"能跑就行"。MAR（Multi-Agent Reflexion）引入三个不同角色的批评者作为**可选补充**，解决"思维退化"问题：
 
 | 角色 | 立场 | 输出 |
 |------|------|------|
@@ -42,7 +42,7 @@ orch = SkillForgeOrchestrator(
 )
 
 result = orch.run(task_description="...", llm_response=llm_json)
-closed = orch.evaluate_and_close(result, actual_score=70)
+closed = orch.evaluate_and_close(result, user_rating=3)   # actual = predicted 自动推导
 
 # MAR 结果
 mar = closed.phase4.mar_result
@@ -156,8 +156,9 @@ for rec in results:
 ### 机制
 
 ```
-任务 A 失败（delta < -5）
-  → Phase 4 生成反思，写入 L2 reflections.md
+任务 A 失败（rating=1, delta=-40）
+  → sf update-l0 自动追加反思模板骨架到 L2 reflections.md
+  → Agent 按内因三维度填充（理解 / 预判 / 执行策略）
 
 任务 B（同 task_type，下次）
   → Phase 1 前自动加载同类型反思
@@ -237,7 +238,7 @@ orch = SkillForgeOrchestrator(
 
 | 组件 | 额外 Token / 任务 | 触发条件 |
 |------|-----------------|---------|
-| MAR | ~1,000 | 仅在 delta < -5 时（约 15% 任务） |
+| MAR | ~1,000 | 仅在 rating=1（delta=-40）时触发，约 10% 任务 |
 | 向量检索 | ~200 | Phase 2 每次都跑，但只是本地计算 |
-| Reflexion | ~200 | Phase 1 有历史反思时 |
+| Reflexion | ~200 | Phase 1 有同 task_type 历史反思时 |
 | 合计（平均） | ~400 | 远低于 1K tokens/任务 |

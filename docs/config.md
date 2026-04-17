@@ -11,10 +11,10 @@
 # 五态 Gap 阈值
 # ────────────────────────────────────────────────────────
 gap_thresholds:
-  independent_max: 5      # Gap < 5  → independent，直接执行
-  light_hints_max: 15     # 5-15    → light-hint，结束时轻提示
-  suggest_max: 30          # 15-30   → suggest，询问用户
-  force_max: 50           # 30-50   → force-enhance，暂停等确认
+  independent_max: 5      # Gap < 5   → independent，直接执行
+  light_hints_max: 15     # 5-15     → light-hint，结束时轻提示
+  suggest_max: 30          # 15-30    → suggest，询问用户
+  force_max: 50           # 30-50    → force-enhance，暂停等确认
   # Gap ≥ 50 → out-of-scope，拒绝执行
 
 # ────────────────────────────────────────────────────────
@@ -23,18 +23,15 @@ gap_thresholds:
 prediction:
   model: "gpt-4o-mini"           # Phase 1 分析使用的模型（轻量即可）
   prompt_template: "detailed"    # "detailed" | "quick"
-  calibration_enabled: true      # 是否启用 L0 历史数据校准
+  # calibration_enabled 已废弃：L0 历史校准默认开启，无法关闭
 
 # ────────────────────────────────────────────────────────
-# Phase 4 评估权重
+# Phase 4 评估
 # ────────────────────────────────────────────────────────
 evaluation:
-  default_weight:
-    user: 0.6        # 用户评分权重（1-5 星）
-    llm_self: 0.3    # LLM 自评权重
-    tool: 0.1        # 工具验证权重（代码测试通过率等）
-  patch_threshold: 5   # A < S - 5 → 触发 patch 和反思
-  forger_trigger: 3    # 同类任务成功 3 次 → 触发自创建 skill
+  # v0.1.2 起评分公式简化：actual = predicted，delta = (rating - 3) × 20
+  # 旧字段 default_weight / patch_threshold 已废弃
+  forger_trigger: 5    # 同类任务累计 count ≥ 5 次 → 触发自创建 skill（Forger）
 
 # ────────────────────────────────────────────────────────
 # 存储路径
@@ -42,7 +39,7 @@ evaluation:
 storage:
   registry_path: "skillforge-registry.yaml"
   memory_dir: "memory"
-  trajectory_retention_days: 90   # L1 轨迹保留天数
+  trajectory_retention_days: 90   # L1 轨迹保留天数（仅 Python 批量引擎产出）
 
 # ────────────────────────────────────────────────────────
 # Stage 3: 多 Agent 协作（可选，默认全部关闭）
@@ -114,15 +111,14 @@ gap_thresholds:
   force_max: 40          # 原来 50
 ```
 
-### 场景 2：只用用户评分，不用 LLM 自评
+### 场景 2：Forger 更快触发（新用户积累期）
 
 ```yaml
 evaluation:
-  default_weight:
-    user: 1.0
-    llm_self: 0.0
-    tool: 0.0
+  forger_trigger: 3      # 原来 5，前期快速积累 skill 草稿
 ```
+
+⚠ 降低阈值的副作用：草稿可能基于样本不足的统计数据，需要你在审核时更谨慎地补充 Trigger Conditions。
 
 ### 场景 3：启用 Reflexion，宽松过滤条件
 
@@ -152,10 +148,28 @@ stage3:
 from skillforge.config import get_config
 
 cfg = get_config()  # 自动查找最近的 config.yaml
-# 或
 cfg = get_config("/path/to/config.yaml")
 
-print(cfg.gap_thresholds.suggest_max)  # 30
-print(cfg.stage4.reflexion.enabled)    # False
-print(cfg.stage3.mar.provider)         # "llm-only"
+print(cfg.gap_thresholds.suggest_max)     # 30
+print(cfg.evaluation.forger_trigger)      # 5
+print(cfg.stage4.reflexion.enabled)       # False
+print(cfg.stage3.mar.provider)            # "llm-only"
+print(cfg.storage.memory_dir)             # 绝对路径（v0.2.8 起自动绝对化）
 ```
+
+**关于路径处理**（v0.2.8 起）：
+
+`storage.registry_path` 和 `storage.memory_dir` 即使写的是相对路径（`"memory"`），`Config.load()` 会自动绝对化到项目根目录。这保证 `sf` 命令在任意 CWD（如 `/tmp` / 用户工作区）下都能找到正确的数据文件。
+
+---
+
+## 已废弃字段说明
+
+以下字段在老版本 config.yaml 中存在，v0.2.x 已删除，出现时会被忽略：
+
+| 字段 | 废弃版本 | 原因 |
+|------|---------|------|
+| `prediction.calibration_enabled` | v0.2.0 | L0 历史校准始终开启，开关无意义 |
+| `evaluation.default_weight.user/llm_self/tool` | v0.1.2 | 评分公式简化为 `actual = predicted`，不再加权 |
+| `evaluation.patch_threshold` | v0.1.2 | 用 rating=1 直接触发反思，不再用 delta 阈值 |
+| `output.*`（整个 section） | v0.2.0 | rich 输出格式交给 CLI 本身控制 |

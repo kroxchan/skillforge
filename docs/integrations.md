@@ -30,10 +30,10 @@ cp integrations/skillforge.mdc your-project/.cursor/rules/skillforge.mdc
 cp integrations/skillforge.mdc ~/.cursor/rules/skillforge.mdc
 ```
 
-重启 Cursor Agent 后，每次回复开头会出现 SF 标签：
+重启 Cursor Agent 后，每次回复开头会出现 SF 标签（v0.2.0+ 简化格式）：
 
 ```
-[SF | no gap → Gap≈3 | independent | direct execution]
+[SF | Gap≈3 | independent]
 ```
 
 规则文件开头的 frontmatter（`alwaysApply: true`）控制自动加载行为。详见 [Cursor 集成细节](cursor-integration.md)。
@@ -189,10 +189,10 @@ def skillforge_precheck(task_description: str, llm_analysis: str) -> dict:
 
 ## 验证是否生效
 
-不论哪种接入方式，给 Agent 发送一个任务，回复开头应该出现：
+不论哪种接入方式，给 Agent 发送一个任务，回复开头应该出现（v0.2.0+ 简化格式）：
 
 ```
-[SF | ... → Gap≈... | ... | ...]
+[SF | Gap≈... | <independent|light-hint|suggest|force-enhance|out-of-scope>]
 ```
 
 没有出现说明规则未加载。检查：
@@ -206,8 +206,8 @@ def skillforge_precheck(task_description: str, llm_analysis: str) -> dict:
 
 | 接入方式 | 规则注入 token | 每任务额外 token | 备注 |
 |---------|------------|--------------|------|
-| Cursor `.mdc` | ~600 | ~50（SF 标签） | alwaysApply 每次对话注入一次 |
-| Claude Code `CLAUDE.md` | ~600 | ~50 | session 开始时注入 |
-| Codex `AGENTS.md` | ~600 | ~50 | 任务开始时注入 |
-| System prompt 注入 | 600-1500 | ~50 | 取决于注入 SKILL.md 还是精简版 |
+| Cursor `.mdc` | ~600 | ~30（SF 标签，v0.2.0 起简化为 `[SF | Gap≈N | state]`） | alwaysApply 每次对话注入一次 |
+| Claude Code `CLAUDE.md` | ~600 | ~30 | session 开始时注入 |
+| Codex `AGENTS.md` | ~600 | ~30 | 任务开始时注入 |
+| System prompt 注入 | 600-1500 | ~30 | 取决于注入 SKILL.md 还是精简版 |
 | Python API | 0（不注入规则）| 0 | 由代码直接控制，无 prompt overhead |

@@ -98,11 +98,13 @@ skillforge dashboard
 
 | Stage | 内容 | 状态 |
 |-------|------|------|
-| Stage 0 | pyproject.toml · CLI · 包结构 · 种子 skill | ✅ |
+| Stage 0 | pyproject.toml · CLI · 包结构 | ✅ |
 | Stage 1 | Phase 1-4 串联 · L0/L1/L2 记忆 · 移动平均校准 | ✅ |
 | Stage 2 | observability tracing · sandbox 执行 | ✅ |
 | Stage 3 | MAR 多角色辩论 · 向量语义检索 · 混合召回 | ✅ |
 | Stage 4 | Reflexion Memory · 历史反思自动注入 Phase 1 | ✅ |
+| v0.2.6  | Registry 涌现式生长（Forger 自动触发 · `sf forge` / `sf demand-queue` CLI） | ✅ |
+| v0.2.8  | CWD 独立性修复（sf 命令任意目录可用） | ✅ |
 | Stage 5 | CapBound 白盒预判（hidden state 分类） | 规划中 |
 
 ---
@@ -134,7 +136,7 @@ SkillForge 的设计从以下研究中提取了核心思路：
 多角色批评辩论解决单 Agent 自评的确认偏误问题。对应 Stage 3 的 MARCoordinator：三个 Critic（Optimist/Skeptic/Domain Expert）+ Judge 在单次 LLM 调用内完成，避免多次往返的 token 开销。
 
 **[Hermes Agent](https://arxiv.org/abs/2407.00418)**  
-失败后自动生成可复用的 SKILL.md 文件。对应 SkillForge-Forger 模块：同一类任务成功 3 次后自动生成 skill 草稿，要求用户审核后入库。
+失败后自动生成可复用的 SKILL.md 文件。对应 SkillForge-Forger 模块：v0.2.6 起改为"涌现式生长"——同一 task_type 累计 count ≥ 5 次时，Forger 自动生成轻量骨架草稿到 `memory/self-made/`，用户审核后 `sf push` 入库。
 
 ---
 
