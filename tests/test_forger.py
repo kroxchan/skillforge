@@ -162,9 +162,9 @@ def test_forger_trigger_via_orchestrator():
             "recommended_skill_types": ["code"],
         })
 
-        # 写入 3 条已有成功轨迹，模拟触发条件
+        # 写入 4 条已有成功轨迹，forger_trigger=5 时第 5 次触发
         mem = root / "memory"
-        for i in range(3):
+        for i in range(4):
             _write_trajectory(mem, "code_generation", f"pre-{i}", "success", 78)
 
         # 第 4 次任务
@@ -173,7 +173,7 @@ def test_forger_trigger_via_orchestrator():
             llm_response=llm_response,
             user_decision="skip",
         )
-        closed = orch.evaluate_and_close(result, actual_score=80)
+        closed = orch.evaluate_and_close(result, user_rating=5)
 
         # Forger 触发，返回草稿路径
         assert closed.forger_draft_path is not None
@@ -215,7 +215,7 @@ def test_forger_no_trigger_below_threshold():
             llm_response=llm_response,
             user_decision="skip",
         )
-        closed = orch.evaluate_and_close(result, actual_score=80)
+        closed = orch.evaluate_and_close(result, user_rating=5)
 
         assert closed.forger_draft_path is None
         print("  [PASS] 成功次数不足时不触发 Forger")

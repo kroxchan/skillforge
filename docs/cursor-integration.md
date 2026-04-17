@@ -2,6 +2,8 @@
 
 > 五分钟让 Cursor Agent 具备 SkillForge 能力
 
+> ⚠ **v0.2.x 重要变化**：SF 标签格式已从 v0.1.x 的 `[SF | tool+30,know+20 → Gap≈35 | ...]` 简化为 **`[SF | Gap≈35 | force-enhance]`**（3 维 prec/reas/tool，仅显示总 Gap）。本文档示例若与 `SKILL.md` 不一致以 `SKILL.md` 为准。
+
 ---
 
 ## 接入步骤

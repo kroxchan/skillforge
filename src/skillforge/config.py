@@ -9,13 +9,26 @@ from dataclasses import dataclass, field
 
 
 def _find_project_root() -> Path:
-    """向上查找 skillforge 项目根目录"""
+    """向上查找 skillforge 项目根目录。
+
+    策略一（优先）：从当前工作目录向上找 config.yaml / skillforge-registry.yaml。
+    策略二（关键 fallback）：从本文件（__file__）向上找。
+        pip install -e 保留源文件原位，__file__ 指向
+        .../SKILLFORGE/src/skillforge/config.py，向上即为项目根。
+        这保证了 sf 命令在任意 CWD（如 /tmp、用户工作仓库）下都能找到数据目录。
+    """
     cwd = Path.cwd()
     for p in [cwd, *cwd.parents]:
-        if (p / "config.yaml").exists():
+        if (p / "config.yaml").exists() or (p / "skillforge-registry.yaml").exists():
             return p
+
+    here = Path(__file__).resolve().parent
+    for p in [here, *here.parents]:
         if (p / "skillforge-registry.yaml").exists():
             return p
+        if (p / "config.yaml").exists():
+            return p
+
     return cwd
 
 
@@ -31,16 +44,12 @@ class GapThresholds:
 class PredictionConfig:
     model: str = "gpt-4o-mini"
     prompt_template: str = "detailed"
-    calibration_enabled: bool = True
 
 
 @dataclass
 class EvaluationConfig:
     patch_threshold: float = 5.0
-    forger_trigger: int = 3
-    user_weight: float = 0.6
-    llm_self_weight: float = 0.3
-    tool_weight: float = 0.1
+    forger_trigger: int = 5  # v0.2: 从 3 改为 5，降低自创建门槛
 
 
 @dataclass
@@ -121,14 +130,16 @@ class Config:
 
     @classmethod
     def load(cls, config_path: Optional[str] = None) -> "Config":
+        root = _find_project_root()
         if config_path is None:
-            root = _find_project_root()
             config_path = root / "config.yaml"
         else:
             config_path = Path(config_path)
+            if config_path.is_absolute():
+                root = config_path.parent
 
         if not config_path.exists():
-            return cls()
+            return cls._with_absolute_storage(root)
 
         with open(config_path, "r", encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
@@ -144,6 +155,11 @@ class Config:
         si_raw = s3_raw.get("shared_index", {})
         chroma_raw = vs_raw.get("chroma", {})
 
+        def _abs(p: str) -> str:
+            """将相对路径绝对化到项目根，绝对路径不变。"""
+            pp = Path(p)
+            return str(pp if pp.is_absolute() else root / pp)
+
         return cls(
             gap_thresholds=GapThresholds(
                 independent_max=float(gt.get("independent_max", 5.0)),
@@ -154,18 +170,14 @@ class Config:
             prediction=PredictionConfig(
                 model=pred.get("model", "gpt-4o-mini"),
                 prompt_template=pred.get("prompt_template", "detailed"),
-                calibration_enabled=pred.get("calibration_enabled", True),
             ),
             evaluation=EvaluationConfig(
                 patch_threshold=float(ev.get("patch_threshold", 5.0)),
-                forger_trigger=int(ev.get("forger_trigger", 3)),
-                user_weight=float(ev.get("default_weight", {}).get("user", 0.6)),
-                llm_self_weight=float(ev.get("default_weight", {}).get("llm_self", 0.3)),
-                tool_weight=float(ev.get("default_weight", {}).get("tool", 0.1)),
+                forger_trigger=int(ev.get("forger_trigger", 5)),
             ),
             storage=StorageConfig(
-                registry_path=st.get("registry_path", "skillforge-registry.yaml"),
-                memory_dir=st.get("memory_dir", "memory"),
+                registry_path=_abs(st.get("registry_path", "skillforge-registry.yaml")),
+                memory_dir=_abs(st.get("memory_dir", "memory")),
                 trajectory_retention_days=int(st.get("trajectory_retention_days", 90)),
             ),
             stage3=Stage3Config(
@@ -211,6 +223,16 @@ class Config:
                     inject_in_phase1=raw.get("stage4", {}).get("reflexion", {}).get("inject_in_phase1", True),
                 ),
             ),
+        )
+
+    @classmethod
+    def _with_absolute_storage(cls, root: Path) -> "Config":
+        """构造默认 Config，storage 路径绝对化到给定 root（无 config.yaml 时使用）。"""
+        return cls(
+            storage=StorageConfig(
+                registry_path=str(root / "skillforge-registry.yaml"),
+                memory_dir=str(root / "memory"),
+            )
         )
 
 

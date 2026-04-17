@@ -14,7 +14,7 @@ from rich import print as rprint
 
 from skillforge.config import get_config
 from skillforge.registry import SkillRegistry
-from skillforge.indexer import IndexManager
+from skillforge.indexer import IndexManager, DEFAULT_TASK_TYPE
 from skillforge.engine import SkillForgeEngine
 from skillforge.decider import EnhancementDecider
 from skillforge.models import Skill
@@ -88,7 +88,7 @@ def analyze(
     # Phase 1: 构建分析 prompt（CLI 模式：直接输出 prompt 让用户感知）
     # 实际使用时由 Agent 调用 LLM，CLI 这里是简化版：模拟 Phase 1 结果
     task_types = _infer_task_type(task)
-    task_type = task_types[0] if task_types else "other"
+    task_type = task_types[0] if task_types else "default"
 
     # 读取 L0 索引中的校准值
     gap_adj = index_mgr.get_gap_adjustment(task_type)
@@ -210,7 +210,7 @@ def run(
     # CLI 模式下用简化 Phase 1（不调 LLM）
     # 构建模拟 LLM 响应
     task_types = _infer_task_type(task)
-    task_type = task_types[0] if task_types else "other"
+    task_type = task_types[0] if task_types else "default"
     raw_gap = _estimate_gap(task)
 
     import json
@@ -259,8 +259,8 @@ def run(
     if rating is not None:
         console.print(f"\n[cyan]Phase 4 评估中（评分: {rating}/5）...[/cyan]")
         try:
-            closed = orch.evaluate_and_close(result, actual_score=rating / 5 * 100, user_rating=rating)
-            delta = rating / 5 * 100 - result.trajectory.phase1.predicted_score
+            closed = orch.evaluate_and_close(result, user_rating=rating)
+            delta = (rating - 3) * 20
             console.print(f"[green]✓ 记忆闭环完成 | Delta: {delta:+.0f}分 | 索引已更新[/green]")
         except Exception as e:
             console.print(f"[red]Phase 4 执行失败: {e}[/red]")
@@ -269,50 +269,234 @@ def run(
 
 
 @app.command()
+def eval(
+    task_id: str = typer.Option(..., "--task-id", help="任务 ID（由 SkillForge 自动生成）"),
+    rating: int = typer.Option(..., "--rating", help="用户评分（1-5）"),
+    task_type: str = typer.Option(DEFAULT_TASK_TYPE, "--task-type", help="任务类型（需与 skillforge-registry.yaml 登记的 task_types 一致；未知任务用 default）"),
+    predicted: float = typer.Option(50.0, "--predicted", help="Phase 1 预估分 S（0-100）"),
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
+):
+    """
+    Phase 4 评估结果写入 Python 引擎（Bridge 主路径）。
+
+    用途：Cursor 规则在 Phase 4 末尾调用此命令，将对话态的自评结果写回 Python 引擎，
+    完成 L0 索引更新 + L1 轨迹写入 + L2 反思追加。
+
+    评分约定：
+    - 用户评分（rating）：1（不满意）/ 3（一般）/ 5（满意）
+    - actual = predicted（干活儿的质量以预估为准，用户打分不改变实际分数）
+    - delta = (rating - 3) × 20（用户感受与预估的偏差，用于校准 gap_adjustment）
+      - rating=5 → delta=+40（超预期）
+      - rating=3 → delta=0（符合预期）
+      - rating=1 → delta=-40（低于预期）
+
+    示例：
+        sf eval --task-id abc123 --rating 5 --task-type code_generation --predicted 70
+        # actual=70, delta=+40
+    """
+    from skillforge.evaluator import QualityEvaluator
+    from datetime import datetime
+
+    actual_score = predicted
+    delta = (rating - 3) * 20
+
+    # 写入 L0 索引
+    index_mgr = _load_index()
+    index_mgr.update(
+        task_type=task_type,
+        predicted_score=predicted,
+        actual_score=actual_score,
+        delta=delta,
+        timestamp=datetime.now().isoformat(),
+    )
+
+    result = {
+        "task_id": task_id,
+        "task_type": task_type,
+        "rating": rating,
+        "predicted": predicted,
+        "actual": actual_score,
+        "delta": round(delta, 1),
+        "l0_index_updated": True,
+        "outcome": "success" if delta >= -5 else "patch_needed",
+    }
+
+    if json_output:
+        console.print_json(json.dumps(result, ensure_ascii=False))
+        return
+
+    delta_str = f"{delta:+.1f}"
+    delta_style = "green" if delta >= -5 else "red"
+    console.print(Panel(
+        f"[bold]Task ID[/bold]: {task_id}\n"
+        f"[bold]Task Type[/bold]: {task_type}\n"
+        f"[bold]评分[/bold]: {rating}/5 → {actual_score:.0f}分\n"
+        f"[bold]预估分[/bold]: {predicted:.0f}  [bold]{delta_str}[/bold]\n"
+        f"[bold]结果[/bold]: {result['outcome']}",
+        title=f"Phase 4 评估完成  [/{delta_style}]{delta_str}[/{delta_style}]",
+        border_style="green" if delta >= -5 else "red",
+    ))
+
+    # 若 delta < -5，提示生成反思
+    if delta < -5:
+        console.print("\n[yellow]⚠ Delta < -5，建议生成反思记录写入 memory/reflections.md[/yellow]")
+
+
+@app.command("update-l0")
+def update_l0(
+    task_type: str = typer.Option(..., "--task-type", help="任务类型（从 Registry 中选最贴近的一项，兜底用 'default'）"),
+    rating: int = typer.Option(..., "--rating", help="用户评分：1 / 3 / 5"),
+    task_desc: str = typer.Option(..., "--task-desc", help="任务摘要（建议 ≤50 字符）"),
+    predicted: float = typer.Option(..., "--predicted", help="Phase 1 预估分 S（0-100）"),
+    task_id: str = typer.Option(None, "--task-id", help="可选，默认自动生成 sf-{hex}"),
+    json_output: bool = typer.Option(False, "--json", help="JSON 输出"),
+):
+    """
+    Phase 4 闭环 helper（供 Cursor mdc 规则调用）。
+
+    读取 memory/capability-index.yaml，针对目标 task_type 条目：
+    - count += 1
+    - avg_delta = EMA(delta, α=0.2)
+    - gap_adjustment = round(avg_delta * 2)
+    - 在条目尾部追加一条审计注释（保留已有所有注释）
+    - 同步更新 _meta 的 last_task_id / total_executed / updated_at
+    - 若 rating=1，在 reflections.md 追加反思模板骨架
+
+    其中 delta = (rating - 3) × 20。
+
+    示例:
+        sf update-l0 --task-type refactoring --rating 3 \\
+            --task-desc "修 8 个 FIX + 实现 sf update-l0 helper" \\
+            --predicted 88
+
+    评分约定：
+      rating=1 → delta=-40（用户明确不满 / 要求重做）
+      rating=3 → delta=0 （默认基线：符合预期 / 灰色反馈 / 无反馈）
+      rating=5 → delta=+40（用户明确惊喜，非常罕见）
+    """
+    if rating not in (1, 3, 5):
+        console.print(f"[red]rating 必须是 1 / 3 / 5 之一，收到: {rating}[/red]")
+        raise typer.Exit(1)
+
+    from skillforge.indexer import update_l0_file
+
+    cfg = get_config()
+    index_path = Path(cfg.storage.memory_dir) / "capability-index.yaml"
+
+    try:
+        summary = update_l0_file(
+            index_path=index_path,
+            task_type=task_type,
+            rating=rating,
+            task_desc=task_desc,
+            predicted=predicted,
+            task_id=task_id,
+        )
+    except Exception as e:
+        console.print(f"[red]update-l0 失败: {e}[/red]")
+        raise typer.Exit(1)
+
+    if json_output:
+        console.print_json(json.dumps(summary, ensure_ascii=False))
+        return
+
+    delta = summary["delta"]
+    delta_style = "green" if delta == 0 else ("red" if delta < 0 else "magenta")
+    console.print(Panel(
+        f"[bold]Task ID[/bold]:    {summary['task_id']}\n"
+        f"[bold]Task Type[/bold]:  {summary['task_type']}\n"
+        f"[bold]Rating[/bold]:     {rating} / 5  →  [{delta_style}]delta = {delta:+d}[/{delta_style}]\n"
+        f"[bold]新计数[/bold]:     count = {summary['new_count']}\n"
+        f"[bold]EMA delta[/bold]:  avg_delta = {summary['new_avg_delta']:+.2f}\n"
+        f"[bold]Trend[/bold]:      {summary['new_trend']}\n"
+        f"[bold]Gap 修正[/bold]:   gap_adjustment = {summary['new_gap_adjustment']:+d}\n"
+        f"[bold]全局修正[/bold]:   global_gap_adjustment = {summary['new_global_gap_adjustment']:+d}",
+        title="Phase 4 闭环完成",
+        border_style=delta_style,
+    ))
+    if summary["reflection_written"]:
+        console.print("[yellow]⚠ rating=1，已追加反思模板骨架到 memory/reflections.md，请填充内因分析[/yellow]")
+
+
+def _find_self_made_drafts(keyword: str) -> list[dict]:
+    """扫描 memory/self-made/ 中未入库的 SKILL.md 草稿，返回包含关键词的条目。"""
+    cfg = get_config()
+    draft_dir = Path(cfg.storage.memory_dir) / "self-made"
+    if not draft_dir.exists():
+        return []
+
+    kw_lower = keyword.lower()
+    matched = []
+    for md_file in sorted(draft_dir.glob("*.md")):
+        text = md_file.read_text(encoding="utf-8", errors="ignore")
+        # 简单关键词匹配（文件名 + 内容）
+        if kw_lower in md_file.name.lower() or kw_lower in text.lower():
+            matched.append({
+                "path": str(md_file),
+                "name": md_file.stem,
+                "status": "draft (未入库)",
+            })
+    return matched
+
+
+@app.command()
 def search(
     keyword: str = typer.Argument(..., help="搜索关键词"),
     json_output: bool = typer.Option(False, "--json"),
 ):
     """
-    在 Registry 中搜索 skill。
+    在 Registry 中搜索 skill，同时扫描 memory/self-made/ 本地草稿。
     """
     registry = _load_registry()
     results = registry.find_by_keyword(keyword)
+    drafts = _find_self_made_drafts(keyword)
 
-    if not results:
-        console.print(f"[yellow]未找到包含「{keyword}」的 skill[/yellow]")
+    if not results and not drafts:
+        console.print(f"[yellow]未找到包含「{keyword}」的 skill 或本地草稿[/yellow]")
         return
 
     if json_output:
-        console.print_json(json.dumps([
-            {
-                "skill_id": s.skill_id,
-                "name": s.name,
-                "description": s.description,
-                "task_types": s.task_types,
-                "avg_effectiveness": s.avg_effectiveness,
-                "usage_count": s.usage_count,
-            }
-            for s in results
-        ], ensure_ascii=False))
+        console.print_json(json.dumps({
+            "registry": [
+                {
+                    "skill_id": s.skill_id,
+                    "name": s.name,
+                    "description": s.description,
+                    "task_types": s.task_types,
+                    "avg_effectiveness": s.avg_effectiveness,
+                    "usage_count": s.usage_count,
+                }
+                for s in results
+            ],
+            "local_drafts": drafts,
+        }, ensure_ascii=False))
         return
 
-    table = Table(title=f"搜索结果: 「{keyword}」（{len(results)} 个）", show_header=True)
-    table.add_column("Name", style="cyan")
-    table.add_column("ID", style="dim")
-    table.add_column("Task Types", style="green")
-    table.add_column("效果", justify="right")
-    table.add_column("使用次数", justify="right")
+    if results:
+        table = Table(title=f"Registry 搜索结果: 「{keyword}」（{len(results)} 个）", show_header=True)
+        table.add_column("Name", style="cyan")
+        table.add_column("ID", style="dim")
+        table.add_column("Task Types", style="green")
+        table.add_column("效果", justify="right")
+        table.add_column("使用次数", justify="right")
+        for s in results:
+            table.add_row(
+                f"[bold]{s.name}[/bold]",
+                s.skill_id,
+                ", ".join(s.task_types[:3]),
+                f"{s.avg_effectiveness:.0%}",
+                str(s.usage_count),
+            )
+        console.print(table)
+    else:
+        console.print(f"[dim]Registry 无「{keyword}」匹配项[/dim]")
 
-    for s in results:
-        table.add_row(
-            f"[bold]{s.name}[/bold]",
-            s.skill_id,
-            ", ".join(s.task_types[:3]),
-            f"{s.avg_effectiveness:.0%}",
-            str(s.usage_count),
-        )
-    console.print(table)
+    if drafts:
+        console.print()
+        console.print(f"[yellow]⚠ 发现 {len(drafts)} 个本地未入库草稿（`memory/self-made/`）：[/yellow]")
+        for d in drafts:
+            console.print(f"  [cyan]{d['name']}[/cyan]  {d['path']}")
+        console.print("[dim]  审核后可用 `sf push <path>` 入库[/dim]")
 
 
 @app.command()
@@ -367,6 +551,319 @@ def list_skills(
             f"{s.avg_effectiveness:.0%}",
             str(s.usage_count),
             s.quality_tier,
+        )
+    console.print(table)
+
+
+@app.command()
+def show(
+    skill_id: str = typer.Argument(..., help="skill_id（来自 sf search / sf list-skills）"),
+    json_output: bool = typer.Option(False, "--json", help="JSON 格式输出"),
+):
+    """
+    输出指定 skill 的完整上下文（供 Phase 3 注入 Agent context 使用）。
+
+    行为：
+    1. 若 Registry 中该 skill 的 path 指向真实存在的 SKILL.md → 输出文件内容
+    2. 否则 → 用 Registry 的 description / task_types / capability_gains /
+       trigger_keywords 拼装最小 inline context（标注 path_missing=True）
+
+    设计保证：Phase 3 必然拿到某种 context，不会因 SKILL.md 缺失而阻塞。
+    """
+    registry = _load_registry()
+    skill = next((s for s in registry.skills if s.skill_id == skill_id), None)
+
+    if skill is None:
+        console.print(f"[red]未找到 skill_id: {skill_id}[/red]")
+        console.print("[dim]用 `sf list-skills` 查看全部已注册 skill[/dim]")
+        raise typer.Exit(1)
+
+    # 路径解析：相对路径以 Registry yaml 所在目录为基准
+    skill_path = None
+    path_missing = True
+    if skill.path:
+        p = Path(skill.path)
+        if not p.is_absolute():
+            p = registry.registry_path.parent / p
+        if p.exists() and p.is_file():
+            skill_path = p
+            path_missing = False
+
+    if skill_path is not None:
+        content = skill_path.read_text(encoding="utf-8")
+        source = "skill_md"
+    else:
+        content = _build_inline_skill_context(skill)
+        source = "registry_inline"
+
+    if json_output:
+        console.print_json(json.dumps({
+            "skill_id": skill.skill_id,
+            "name": skill.name,
+            "source": source,
+            "path_missing": path_missing,
+            "resolved_path": str(skill_path) if skill_path else skill.path,
+            "content": content,
+            "capability_gains": skill.capability_gains,
+            "task_types": skill.task_types,
+            "quality_tier": skill.quality_tier,
+        }, ensure_ascii=False))
+        return
+
+    # 纯文本输出（供 Phase 3 直接 pipe / 复制进 context）
+    if path_missing:
+        console.print(
+            f"[yellow]⚠ SKILL.md 物理文件缺失[/yellow]：{skill.path}\n"
+            f"[dim]已降级到 Registry inline context（path_missing=True）[/dim]\n"
+        )
+    console.print(content)
+
+
+def _build_inline_skill_context(skill) -> str:
+    """
+    当 SKILL.md 物理文件不存在时，用 Registry 元数据拼装最小可用上下文。
+    此函数输出供 Phase 3 注入 Agent context 使用。
+    """
+    gains = skill.capability_gains or {}
+    gains_lines = "\n".join(
+        f"- **{k}**: +{v:.0f}" for k, v in gains.items()
+    ) or "- （未填写）"
+
+    task_types_line = ", ".join(skill.task_types) or "（未指定）"
+    keywords_line = ", ".join(skill.trigger_keywords) or "（未指定）"
+    domain_line = ", ".join(skill.domain) or "（未指定）"
+
+    return (
+        f"# Skill: {skill.name} (`{skill.skill_id}`)\n"
+        f"\n"
+        f"> **注意**：此 skill 的完整 SKILL.md 尚未创建（`{skill.path}` 不存在）。\n"
+        f"> 以下是 Registry 提供的轻量 inline context，作为 Phase 3 的临时注入上下文。\n"
+        f"\n"
+        f"## 描述\n"
+        f"{skill.description or '（未填写）'}\n"
+        f"\n"
+        f"## 领域\n"
+        f"{domain_line}\n"
+        f"\n"
+        f"## 适用任务类型\n"
+        f"{task_types_line}\n"
+        f"\n"
+        f"## 能力提升估算 (capability_gains)\n"
+        f"{gains_lines}\n"
+        f"\n"
+        f"## 触发关键词\n"
+        f"{keywords_line}\n"
+        f"\n"
+        f"## 质量等级\n"
+        f"{skill.quality_tier}（L2=设计意图估算；L1=验证；L3=实验；unknown=无数据）\n"
+        f"\n"
+        f"## 使用指引（Agent）\n"
+        f"- 处理 `{task_types_line}` 类任务时，优先按上述能力维度自检\n"
+        f"- 若发现问题落在 trigger_keywords 范围内，启用该 skill 的专长视角\n"
+        f"- 执行完成后主动坦白：此轮使用的 skill 为 inline context（非完整 SKILL.md）\n"
+    )
+
+
+@app.command()
+def forge(
+    task_type: str = typer.Option(None, "--task-type", help="只对此 task_type 触发（不指定则扫描所有达到阈值的）"),
+    force: bool = typer.Option(False, "--force", help="忽略重复抑制，强制重新生成草稿"),
+    json_output: bool = typer.Option(False, "--json"),
+):
+    """
+    手动触发 Forger：扫描 L0 索引，为达到阈值 (count ≥ 5 且 Registry 无覆盖) 的
+    task_type 生成 SKILL.md 轻量骨架草稿到 memory/self-made/。
+
+    正常情况 Forger 由 `sf update-l0` 自动触发；此命令用于：
+    - 手动检视当前有多少 task_type 满足生成条件
+    - 用户删除了已有草稿后想重新生成（配合 --force）
+    - 对特定 task_type 强制生成（--task-type 且 --force）
+    """
+    from skillforge.forger import should_forge, forge_draft, FORGE_COUNT_THRESHOLD
+    import yaml as _yaml
+
+    cfg = get_config()
+    memory_dir = Path(cfg.storage.memory_dir)
+    index_path = memory_dir / "capability-index.yaml"
+    registry_path = Path(cfg.storage.registry_path)
+
+    if not index_path.exists():
+        console.print(f"[red]L0 索引不存在: {index_path}[/red]")
+        raise typer.Exit(1)
+
+    data = _yaml.safe_load(index_path.read_text(encoding="utf-8")) or {}
+    idx = data.get("task_type_index", {}) or {}
+
+    targets = [task_type] if task_type else list(idx.keys())
+    results = []
+
+    for tt in targets:
+        if tt == "default":
+            continue
+        entry = idx.get(tt, {})
+        count = entry.get("count", 0)
+        eligible = count >= FORGE_COUNT_THRESHOLD
+
+        should = False
+        if force and task_type == tt:
+            should = True
+        elif eligible:
+            should = should_forge(tt, index_path, registry_path, memory_dir)
+
+        if not should:
+            results.append({
+                "task_type": tt,
+                "count": count,
+                "status": "skipped",
+                "reason": (
+                    f"count={count} < {FORGE_COUNT_THRESHOLD}"
+                    if count < FORGE_COUNT_THRESHOLD
+                    else "已有对应 Registry skill 或 self-made 草稿"
+                ),
+                "draft_path": None,
+            })
+            continue
+
+        draft = forge_draft(tt, index_path, memory_dir, force=force)
+        results.append({
+            "task_type": tt,
+            "count": count,
+            "status": "forged" if draft else "failed",
+            "draft_path": str(draft) if draft else None,
+        })
+
+    if json_output:
+        console.print_json(json.dumps(results, ensure_ascii=False))
+        return
+
+    # 默认只展示 count>0 的行；--verbose 时展示全部
+    visible = [r for r in results if r["count"] > 0] if not force else results
+    if not visible:
+        console.print("[dim]当前 L0 中暂无 count > 0 的 task_type。[/dim]")
+        console.print(
+            "继续积累：每次 Phase 4 调用 `sf update-l0` 后，"
+            "达到 count ≥ 5 的 task_type 会自动生成草稿。\n"
+            "运行 `sf demand-queue` 查看所有进度。"
+        )
+        return
+
+    table = Table(title=f"Forger 扫描结果（共 {len(visible)} 项，count=0 已过滤）", show_header=True)
+    table.add_column("task_type", style="cyan")
+    table.add_column("count", justify="right")
+    table.add_column("状态")
+    table.add_column("草稿路径 / 跳过原因")
+
+    for r in visible:
+        status_txt = (
+            "[green]已生成[/green]" if r["status"] == "forged"
+            else "[yellow]跳过[/yellow]" if r["status"] == "skipped"
+            else "[red]失败[/red]"
+        )
+        extra = r.get("draft_path") or r.get("reason", "")
+        table.add_row(r["task_type"], str(r["count"]), status_txt, extra)
+    console.print(table)
+
+    forged_count = sum(1 for r in visible if r["status"] == "forged")
+    if forged_count > 0:
+        console.print(
+            f"\n[bold green]✓ 已生成 {forged_count} 份草稿[/bold green]，请审核 "
+            f"`memory/self-made/` 后用 `sf push <path>` 入库。"
+        )
+    elif all(r["status"] == "skipped" for r in visible):
+        console.print(
+            "\n[dim]以上 task_type 均未达到阈值或已有覆盖，暂无草稿生成。[/dim]\n"
+            "运行 `sf demand-queue` 查看距阈值的剩余进度。"
+        )
+
+
+@app.command(name="demand-queue")
+def demand_queue(
+    json_output: bool = typer.Option(False, "--json"),
+):
+    """
+    查看 L0 索引中每个 task_type 距离 Forger 阈值 (count ≥ 5) 还差多少。
+
+    这是涌现式 Registry 的"需求面板"：
+    - ▲ 已达阈值但未生成 → 运行 `sf forge` 即可生成草稿
+    - ◎ 已有草稿 / Registry 覆盖 → 不会重复生成
+    - ○ 进展中 → 继续积累
+    """
+    from skillforge.forger import FORGE_COUNT_THRESHOLD
+    import yaml as _yaml
+
+    cfg = get_config()
+    memory_dir = Path(cfg.storage.memory_dir)
+    index_path = memory_dir / "capability-index.yaml"
+    registry_path = Path(cfg.storage.registry_path)
+    draft_dir = memory_dir / "self-made"
+
+    if not index_path.exists():
+        console.print(f"[red]L0 索引不存在: {index_path}[/red]")
+        raise typer.Exit(1)
+
+    data = _yaml.safe_load(index_path.read_text(encoding="utf-8")) or {}
+    idx = data.get("task_type_index", {}) or {}
+
+    # 已覆盖的 task_type（Registry 或 self-made）
+    covered = set()
+    if registry_path.exists():
+        reg_data = _yaml.safe_load(registry_path.read_text(encoding="utf-8")) or {}
+        for s in reg_data.get("skills", []) or []:
+            covered.update(s.get("task_types") or [])
+    drafted = set()
+    if draft_dir.exists():
+        for f in draft_dir.glob("*-draft-*.md"):
+            tt = f.name.rsplit("-draft-", 1)[0]
+            drafted.add(tt)
+
+    rows = []
+    for tt, entry in sorted(idx.items()):
+        if tt == "default":
+            continue
+        count = entry.get("count", 0)
+        avg_delta = entry.get("avg_delta", 0.0)
+        # 过滤 v0.2.1 预置但从未有真实数据的空条目（count=0 且 avg=0）
+        # 这些条目会在真实使用后自然变成 count>0，届时再重新出现
+        if count == 0 and avg_delta == 0:
+            continue
+        remaining = max(0, FORGE_COUNT_THRESHOLD - count)
+        if tt in covered:
+            status = "◎ 已入 Registry"
+        elif tt in drafted:
+            status = "◎ 已有草稿"
+        elif count >= FORGE_COUNT_THRESHOLD:
+            status = "▲ 达阈值待生成"
+        else:
+            status = f"○ 进展中（还差 {remaining}）"
+        rows.append({
+            "task_type": tt,
+            "count": count,
+            "avg_delta": round(avg_delta, 2),
+            "remaining": remaining,
+            "status": status,
+        })
+
+    if json_output:
+        console.print_json(json.dumps(rows, ensure_ascii=False))
+        return
+
+    if not rows:
+        console.print("[dim]L0 索引尚无非 default task_type 记录。[/dim]")
+        return
+
+    table = Table(title="SkillForge 需求面板（涌现式 Registry）", show_header=True)
+    table.add_column("task_type", style="cyan")
+    table.add_column("count", justify="right")
+    table.add_column("avg_delta", justify="right")
+    table.add_column("距阈值", justify="right")
+    table.add_column("状态")
+    for r in rows:
+        table.add_row(
+            r["task_type"],
+            str(r["count"]),
+            f"{r['avg_delta']:+.1f}",
+            str(r["remaining"]) if r["remaining"] > 0 else "✓",
+            r["status"],
         )
     console.print(table)
 
@@ -499,6 +996,101 @@ def dashboard(
         ))
 
 
+@app.command()
+def ingest(
+    timings_file: str = typer.Argument(..., help="cursor-timings.md 文件路径"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="只打印解析结果，不写入"),
+):
+    """
+    [已废弃] 批量导入 cursor-timings.md 记录到 L0 索引。
+
+    cursor-timings.md 自 v0.2.2 起不再产出，此命令仅用于存量历史文件的一次性迁移。
+    新场景请使用 `sf update-l0` 完成单次 Phase 4 闭环。
+    """
+    console.print(
+        "[yellow]⚠ 警告：sf ingest 已废弃（v0.2.2+）[/yellow]\n"
+        "cursor-timings.md 自 v0.2.2 起不再产出。\n"
+        "如需写入 Phase 4 数据，请改用：\n"
+        "  [bold]sf update-l0 --task-type <type> --rating <1|3|5> "
+        "--task-desc '<摘要>' --predicted <S>[/bold]\n"
+    )
+
+    from skillforge.models import Trajectory, Phase4Result, Phase1Result
+    from datetime import datetime
+
+    file_path = Path(timings_file)
+    if not file_path.exists():
+        console.print(f"[red]文件不存在: {timings_file}[/red]")
+        raise typer.Exit(1)
+
+    index_mgr = _load_index()
+    registry = _load_registry()
+
+    content = file_path.read_text(encoding="utf-8")
+    entries = _parse_cursor_timings(content)
+
+    if not entries:
+        console.print("[yellow]未解析到任何记录[/yellow]")
+        return
+
+    console.print(f"[cyan]解析到 {len(entries)} 条记录：[/cyan]")
+    for entry in entries:
+        console.print(
+            f"  [{entry['task_id']}] {entry['task_type']} "
+            f"S={entry['s']} A={entry['a']} Δ={entry['delta']:+.1f}"
+        )
+
+    if dry_run:
+        console.print("\n[dim]--dry-run: 未写入任何数据[/dim]")
+        return
+
+    written = 0
+    for entry in entries:
+        index_mgr.update(
+            task_type=entry["task_type"],
+            predicted_score=entry["s"],
+            actual_score=entry["a"],
+            delta=entry.get("delta", 0),
+            timestamp=entry.get("timestamp"),
+        )
+        written += 1
+
+    console.print(f"\n[green]✓ 写入完成：{written} 条 L0 索引更新[/green]")
+
+
+def _parse_cursor_timings(content: str) -> list[dict]:
+    """从 cursor-timings.md 解析出评估记录（支持表格格式）"""
+    import re
+    records = []
+    # ## [sf-{uuid}] task_type @ YYYY-MM-DD HH:MM
+    # | 字段 | 值 |
+    # | S | X |
+    # | A | X |
+    # | delta | +Y |
+    # | rating | N |
+    blocks = re.split(r"(?=^## \[sf-)", content, flags=re.MULTILINE)
+    for block in blocks:
+        if not block.strip():
+            continue
+        m_id = re.search(r"## \[([^\]]+)\] (\w+)", block)
+        ts_m = re.search(r"@ ([\d\-T: ]+)", block)
+        s_m = re.search(r"\|\s*S\s*\|\s*(\d+(?:\.\d+)?)", block)
+        a_m = re.search(r"\|\s*A\s*\|\s*(\d+(?:\.\d+)?)", block)
+        d_m = re.search(r"\|\s*delta\s*\|\s*([+-]?\d+(?:\.\d+)?)", block)
+        r_m = re.search(r"\|\s*rating\s*\|\s*(\d)", block)
+        if m_id and s_m:
+            records.append({
+                "task_id": m_id.group(1),
+                "task_type": m_id.group(2),
+                "timestamp": ts_m.group(1).strip() if ts_m else "",
+                "s": float(s_m.group(1)),
+                "a": float(a_m.group(1)) if a_m else float(s_m.group(1)),
+                "delta": float(d_m.group(1)) if d_m else 0.0,
+                "rating": int(r_m.group(1)) if r_m else 3,
+            })
+    return records
+
+
 # ── 入口 ────────────────────────────────────────────────
 
 def main():
@@ -512,29 +1104,65 @@ if __name__ == "__main__":
 # ── 内部辅助函数 ────────────────────────────────────────
 
 def _infer_task_type(task: str) -> list[str]:
-    """根据任务描述推断 task_type（简化版）"""
+    """
+    根据任务描述推断 task_type。
+
+    ⚠️ 仅用于 Python 引擎批量路径（`sf analyze` / `sf run`）。
+    Cursor 对话路径下，Agent 应按 mdc Phase 4 规则**自主命名** snake_case task_type，
+    并在 `sf update-l0 --task-type <tt>` 时直接传入，不经过此函数。
+
+    此函数基于预设关键词映射，不能覆盖涌现式 Registry 下的所有情况，
+    命中不准确时兜底返回 ["default"]。
+    """
     task_lower = task.lower()
 
+    # 映射表 key: 关键词列表，value: Registry 中已登记的 task_type
     patterns = [
-        (["code", "python", "javascript", "typescript", "写代码", "函数", "class"], ["code_generation"]),
-        (["review", "review", "pr", "代码审查", "review code"], ["code_review"]),
-        (["research", "研究", "调研", "分析趋势", "find information"], ["research"]),
-        (["seo", "搜索引擎优化", "关键词", "search engine"], ["seo"]),
-        (["kol", "influencer", "dm", "outreach", "推广", "网红"], ["kol_outreach"]),
-        (["data", "分析", "chart", "dashboard", "数据可视化"], ["data_analysis"]),
-        (["design", "ui", "ux", "设计", "figma"], ["design"]),
-        (["write", "写作", "文案", "content", "blog"], ["writing"]),
+        # code-expert
+        (["code", "python", "javascript", "typescript", "写代码", "函数", "class", "function"], "code_generation"),
+        (["refactor", "重构", "重写", "重组"], "refactoring"),
+        (["debug", "调试", "报错", "error", "exception", "traceback"], "debugging"),
+        (["review", "pr", "代码审查", "code review"], "code_review"),
+        (["algorithm", "算法", "排序", "搜索", "数据结构"], "algorithm_design"),
+        # seo-analysis
+        (["seo", "搜索引擎优化", "search engine", "网站排名"], "content_analysis"),
+        (["keyword", "关键词", "kw research"], "keyword_research"),
+        (["competitor", "竞品", "竞争对手"], "competitor_analysis"),
+        (["backlink", "外链", "链接建设"], "backlink_analysis"),
+        # data-analysis
+        (["数据清洗", "clean data", "data clean"], "data_cleaning"),
+        (["统计", "statistical", "regression", "分布"], "statistical_analysis"),
+        (["visualiz", "可视化", "chart", "图表", "dashboard"], "visualization"),
+        (["report", "报表", "报告"], "report_generation"),
+        # research
+        (["research", "调研", "研究", "find information", "文献", "论文"], "research"),
+        (["事实核查", "fact check", "verify"], "fact_checking"),
+        # video-production
+        (["video", "视频", "ffmpeg", "mp4", "剪辑"], "video_editing"),
+        (["convert", "转码", "format", "格式转换"], "format_conversion"),
+        (["audio", "音频", "音声"], "audio_processing"),
+        (["thumbnail", "封面", "缩略图"], "thumbnail_design"),
+        (["script", "脚本", "旁白", "剧本"], "script_writing"),
     ]
 
-    result = []
+    # 打分匹配：统计每个 task_type 命中的关键词数，取最高分
+    # 相比首匹配，顺序无关、结果可解释、多关键词描述更准确
+    scores: dict[str, int] = {}
     for keywords, task_type in patterns:
-        if any(k in task_lower for k in keywords):
-            result.extend(task_type)
-            break
+        hits = sum(1 for k in keywords if k in task_lower)
+        if hits > 0:
+            scores[task_type] = scores.get(task_type, 0) + hits
 
-    if not result:
-        result = ["other"]
-    return result
+    if not scores:
+        return ["default"]
+
+    max_score = max(scores.values())
+    # 平局时按 patterns 声明顺序取第一个（稳定排序）
+    for keywords, task_type in patterns:
+        if scores.get(task_type, 0) == max_score:
+            return [task_type]
+
+    return ["default"]
 
 
 def _estimate_gap(task: str) -> float:

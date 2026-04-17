@@ -31,7 +31,7 @@ def _make_trajectory(
         task_description="写一个 Python 异步爬虫，抓取多个网站数据",
         task_type=task_type,
         timestamp=datetime.now(),
-        phase1=Phase1Result(predicted_score=predicted, gap=20, gap_level="L2"),
+        phase1=Phase1Result(predicted_score=predicted, gap=20, gap_level="suggest"),
         phase2=Phase2Result(selected_skill=None, user_decision="skip"),
         phase3=Phase3Result(tools_used=["bash", "read"], errors=[]),
         phase4=Phase4Result(actual_score=actual),

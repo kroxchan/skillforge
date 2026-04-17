@@ -416,7 +416,7 @@ def test_orchestrator_reflexion_and_close():
 
         # Phase 4 闭环（失败 → 生成反思）
         # MAR 未启用，所以不 patch MAR
-        closed = orch.evaluate_and_close(result, actual_score=55)
+        closed = orch.evaluate_and_close(result, user_rating=1)  # delta=-40，触发反思
 
         assert closed.index_updated is True
         # 反思已写入 reflections.md（evaluator 使用 Path("memory")）

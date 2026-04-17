@@ -43,17 +43,20 @@ def test_index_manager_write_and_read():
         index_file = root / "memory" / "capability-index.yaml"
         index = IndexManager(index_path=str(index_file))
 
-        # delta1 = 72-80=-8 -> avg=0.2*(-8)+0.8*0=-1.6
-        index.update("code_generation", 80, 72, "2026-04-15")
+        # 新设计：delta 由用户评分独立传入（= (rating-3)*20），actual = predicted
+        # delta1=-16（rating=3 → 符合预期，delta=0；这里用 -16 模拟 rating=2 偏悲观）
+        # avg_delta = 0.2*(-16) + 0.8*0 = -3.2
+        index.update("code_generation", 80, 80, delta=-16, timestamp="2026-04-15")
         e = index.index.task_type_index["code_generation"]
         assert e.count == 1
-        assert abs(e.avg_delta - (-1.6)) < 0.01
+        assert abs(e.avg_delta - (-3.2)) < 0.01
 
-        # delta2 = 85-80=+5 -> avg=0.2*5+0.8*(-1.6)=-0.28
-        index.update("code_generation", 80, 85, "2026-04-16")
+        # delta2=+24（rating=4 → delta=(4-3)*20=+20；这里用+24 模拟超预期）
+        # avg_delta = 0.2*(+24) + 0.8*(-3.2) = +2.24
+        index.update("code_generation", 80, 80, delta=+24, timestamp="2026-04-16")
         e = index.index.task_type_index["code_generation"]
         assert e.count == 2
-        assert abs(e.avg_delta - (-0.28)) < 0.01
+        assert abs(e.avg_delta - (+2.24)) < 0.01
 
         # 重加载验证
         index2 = IndexManager(index_path=str(index_file))
@@ -80,32 +83,38 @@ def test_decider_five_states():
 
 
 def test_registry_effectiveness():
-    """Registry: capability_gains 动态校准（不依赖原始文件状态）"""
+    """Registry: capability_gains 动态校准（不依赖预置 skill，v0.2.6 起 Registry 默认空）"""
     tmpdir, root = new_helper()
     try:
-        # 用模板创建干净的 registry
         reg_file = root / "skillforge-registry.yaml"
-        with open(_REGISTRY_SRC) as f:
-            content = f.read()
-        # 用模板创建干净的 registry（强制测试起点）
-        reg_file = root / "skillforge-registry.yaml"
-        with open(_REGISTRY_SRC) as f:
-            content = f.read()
-        import re
-        content = re.sub(r"(avg_effectiveness: )\d+\.\d+", r"\g<1>0.5", content)
-        content = re.sub(r"(usage_count: )\d+", r"\g<1>0", content)
-        with open(reg_file, "w") as f:
-            f.write(content)
+        # v0.2.6：Registry 默认空，测试注入一个临时 skill
+        reg_file.write_text(
+            "version: '1.0'\n"
+            "updated_at: '2026-04-17'\n"
+            "skills:\n"
+            "  - skill_id: test-skill\n"
+            "    name: Test Skill\n"
+            "    description: 测试专用\n"
+            "    domain: [testing]\n"
+            "    task_types: [test]\n"
+            "    capability_gains:\n"
+            "      precision: 20\n"
+            "    quality_tier: L2\n"
+            "    trigger_keywords: [test]\n"
+            "    avg_effectiveness: 0.5\n"
+            "    usage_count: 0\n",
+            encoding="utf-8",
+        )
 
         registry = SkillRegistry(registry_path=str(reg_file))
-        before = registry.find_by_id("code-expert")
+        before = registry.find_by_id("test-skill")
+        assert before is not None, "注入的临时 skill 应可被 Registry 找到"
         assert before.usage_count == 0
         assert abs(before.avg_effectiveness - 0.5) < 0.01
 
-        # ratio = 25/20 = 1.25
-        # new = 0.5 * 0.7 + 1.25 * 0.3 = 0.725
-        registry.update_effectiveness("code-expert", actual_gain=25, estimated_gain=20)
-        after = registry.find_by_id("code-expert")
+        # ratio = 25/20 = 1.25; new = 0.5 * 0.7 + 1.25 * 0.3 = 0.725
+        registry.update_effectiveness("test-skill", actual_gain=25, estimated_gain=20)
+        after = registry.find_by_id("test-skill")
         assert after.usage_count == 1
         assert abs(after.avg_effectiveness - 0.725) < 0.01
 
@@ -127,7 +136,7 @@ def test_l1_trajectory_write():
             task_description="Python 爬虫开发",
             task_type="code_generation",
             timestamp=datetime.now(),
-            phase1=Phase1Result(predicted_score=80, gap=20, gap_level="L2"),
+            phase1=Phase1Result(predicted_score=80, gap=20, gap_level="suggest"),
             phase2=Phase2Result(selected_skill=None, user_decision="skip"),
             phase3=Phase3Result(tools_used=["bash"], errors=[]),
             phase4=Phase4Result(),
@@ -160,7 +169,7 @@ def test_reflection_append():
             task_description="复杂多步骤任务",
             task_type="research",
             timestamp=datetime.now(),
-            phase1=Phase1Result(predicted_score=70, gap=30, gap_level="L3"),
+            phase1=Phase1Result(predicted_score=70, gap=30, gap_level="force-enhance"),
             phase2=Phase2Result(),
             phase3=Phase3Result(),
             phase4=Phase4Result(),
@@ -212,19 +221,19 @@ def test_end_to_end():
             task_description="端到端测试",
             task_type="code_generation",
             timestamp=datetime.now(),
-            phase1=Phase1Result(predicted_score=80, gap=20, gap_level="L2"),
+            phase1=Phase1Result(predicted_score=80, gap=20, gap_level="suggest"),
             phase2=Phase2Result(),
             phase3=Phase3Result(),
             phase4=Phase4Result(),
         )
-        phase4 = Phase4Result(actual_score=75, outcome="success")
+        phase4 = Phase4Result(actual_score=75, outcome="success", delta=0.0)
         eval.finalize(trajectory, phase4)
 
-        # L0 验证（EMA：alpha=0.2，delta=-5 → avg_delta = 0.2*(-5)+0.8*0 = -1.0）
+        # L0 验证（EMA：alpha=0.2，delta=0 → avg_delta = 0.2*0 + 0.8*0 = 0）
         index = IndexManager(index_path=str(index_file))
         entry = index.get_entry("code_generation")
         assert entry.count == 1
-        assert abs(entry.avg_delta - (-1.0)) < 0.1
+        assert abs(entry.avg_delta - 0.0) < 0.1
 
         print("  [PASS] End-to-end: 预判 -> 决策 -> 评估 -> 索引更新")
     finally:
@@ -264,11 +273,11 @@ def test_orchestrator_run_and_close():
 
         assert result.task_id.startswith("sf-")
         assert result.phase3_context != ""
-        assert result.trajectory.task_type in ("code_generation", "other")
+        assert result.trajectory.task_type in ("code_generation", "default")
         assert result.trajectory.phase1.predicted_score == 75
 
-        # Phase 4 闭环
-        closed = orch.evaluate_and_close(result, actual_score=70)
+        # Phase 4 闭环（user_rating=3 → delta=0）
+        closed = orch.evaluate_and_close(result, user_rating=3)
         assert closed.index_updated is True
         assert closed.phase4.outcome in ("success", "success_within_tolerance")
 

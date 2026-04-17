@@ -49,7 +49,7 @@ def _skills():
             description="专业代码编写与审查", domain=["programming"],
             task_types=["code_generation", "refactoring"],
             capability_gains={"precision": 10, "reasoning": 5},
-            quality_tier="L2", usage_count=5, avg_effectiveness=0.85,
+            quality_tier="unknown", usage_count=5, avg_effectiveness=0.85,
             source="local", path="skills/code-expert",
             trigger_keywords=["写代码", "code", "python"],
         ),
@@ -58,7 +58,7 @@ def _skills():
             description="搜索引擎优化分析", domain=["marketing"],
             task_types=["seo", "content_analysis"],
             capability_gains={"precision": 8},
-            quality_tier="L2", usage_count=3, avg_effectiveness=0.75,
+            quality_tier="unknown", usage_count=3, avg_effectiveness=0.75,
             source="local", path="skills/seo-analysis",
             trigger_keywords=["seo", "关键词"],
         ),
@@ -71,7 +71,7 @@ def _trajectory(task_type="code_generation", predicted=80, actual=75):
         task_description="写一个 Python 异步爬虫",
         task_type=task_type,
         timestamp=datetime.now(),
-        phase1=Phase1Result(predicted_score=predicted, gap=20, gap_level="L2"),
+        phase1=Phase1Result(predicted_score=predicted, gap=20, gap_level="suggest"),
         phase2=Phase2Result(selected_skill=None, user_decision="skip"),
         phase3=Phase3Result(tools_used=["bash"], errors=[]),
         phase4=Phase4Result(actual_score=actual, outcome="success_within_tolerance"),
@@ -325,7 +325,7 @@ def test_orchestrator_run_with_mar_evaluates():
         })
 
         with patch.object(orch.mar._adapter, "_call_llm", return_value=mock_mar_response):
-            closed = orch.evaluate_and_close(result, actual_score=70)
+            closed = orch.evaluate_and_close(result, user_rating=5)
 
         assert closed.phase4.mar_result is not None
         assert closed.phase4.mar_result["judge"]["trigger_improvement"] is True
@@ -363,7 +363,7 @@ def test_orchestrator_run_with_vector_search_uses_hybrid():
                 domain=["marketing"],
                 task_types=["seo"],
                 capability_gains={"precision": 8},
-                quality_tier="L2",
+                quality_tier="unknown",
                 usage_count=3,
                 avg_effectiveness=0.75,
                 source="local",
@@ -382,7 +382,7 @@ def test_orchestrator_run_with_vector_search_uses_hybrid():
                 skill_id="seo-analysis", name="SEO Analysis Skill",
                 description="SEO analysis", domain=["marketing"],
                 task_types=["seo"], capability_gains={"precision": 8},
-                quality_tier="L2", usage_count=3, avg_effectiveness=0.75,
+                quality_tier="unknown", usage_count=3, avg_effectiveness=0.75,
                 source="local", path="skills/seo-analysis",
                 trigger_keywords=["seo", "关键词"],
             ),
@@ -502,7 +502,7 @@ def test_orchestrator_both_stage3_and_close():
         })
 
         with patch.object(orch.mar._adapter, "_call_llm", return_value=mock_mar_response):
-            closed = orch.evaluate_and_close(result, actual_score=68)
+            closed = orch.evaluate_and_close(result, user_rating=3)
 
         # 双闭环验证
         assert closed.index_updated is True

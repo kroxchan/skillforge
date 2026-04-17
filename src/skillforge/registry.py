@@ -48,9 +48,9 @@ class SkillRegistry:
                     k: round(float(v), 2)
                     for k, v in d.get("capability_gains", {}).items()
                 },
-                "quality_tier": d.get("quality_tier", "L2"),
+                "quality_tier": d.get("quality_tier", "unknown"),
                 "usage_count": d.get("usage_count", 0),
-                "avg_effectiveness": round(float(d.get("avg_effectiveness", 0.7)), 2),
+                "avg_effectiveness": round(float(d.get("avg_effectiveness", 0.5)), 2),
                 "source": d.get("source", "local"),
                 "path": d.get("path", ""),
                 "trigger_keywords": d.get("trigger_keywords", []),

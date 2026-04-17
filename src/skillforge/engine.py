@@ -34,39 +34,32 @@ from skillforge.reflexion import ReflectionLoader, format_as_context
 from skillforge.forger import count_successful_trajectories, generate_forger_draft
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# ⚠️ DEPRECATED NOTICE
+# Engine Phase1 基于 LLM 推理，适合批量脚本 / API 场景。
+# Cursor 对话场景下，以 .cursor/rules/skillforge.mdc 为权威版本。
+# engine 的 PHASE1_PROMPT_TEMPLATE 已同步为 3 维度，与 mdc 规则一致。
+# ─────────────────────────────────────────────────────────────────────────────
+
 # Phase 1 分析 Prompt（供 Agent 直接使用）
+# 权威版本：与 .cursor/rules/skillforge.mdc 的"诊断步骤"保持一致
 PHASE1_PROMPT_TEMPLATE = """你是一个专业的能力评估专家。请分析以下任务，评估其难度和你的能力匹配度。
 
 任务：{task_description}
 
-请从以下 6 个维度分析（每个维度 0-100 分）：
+请从以下 3 个维度分析（每个维度 0-100 分）：
 
-1. 精确性（precision）：做好这个任务需要多精确？无幻觉？无错误？
-   - 任务需求：__分（0-100）
-   - 我的能力：__分（0-100）
-   - 缺口：__分
-
-2. 创意性（creativity）：需要多少创造性表达？
+1. Precision（精确性）：数据必须准确吗？幻觉风险高吗？版本/API 细节容易出错吗？
    - 任务需求：__分
    - 我的能力：__分
    - 缺口：__分
 
-3. 领域知识（domain_knowledge）：需要多少专业领域知识？
+2. Reasoning（推理）：需要多复杂的逻辑链？多步骤依赖？数学推导？
    - 任务需求：__分
    - 我的能力：__分
    - 缺口：__分
 
-4. 工具使用（tool_usage）：需要调用多少外部工具/API？
-   - 任务需求：__分
-   - 我的能力：__分
-   - 缺口：__分
-
-5. 推理能力（reasoning）：需要多复杂的逻辑推理？
-   - 任务需求：__分
-   - 我的能力：__分
-   - 缺口：__分
-
-6. 执行效率（speed）：需要在多短时间内完成？
+3. Tool+Knowledge（工具+知识）：需要调用外部工具吗？专业壁垒高吗？细分领域知识稀缺吗？
    - 任务需求：__分
    - 我的能力：__分
    - 缺口：__分
@@ -75,31 +68,32 @@ PHASE1_PROMPT_TEMPLATE = """你是一个专业的能力评估专家。请分析�
 {{
   "task_requirements": {{
     "precision": [0-100],
-    "creativity": [0-100],
-    "domain_knowledge": [0-100],
-    "tool_usage": [0-100],
     "reasoning": [0-100],
-    "speed": [0-100]
+    "tool_knowledge": [0-100]
   }},
   "agent_capabilities": {{
     "precision": [0-100],
-    "creativity": [0-100],
-    "domain_knowledge": [0-100],
-    "tool_usage": [0-100],
     "reasoning": [0-100],
-    "speed": [0-100]
+    "tool_knowledge": [0-100]
   }},
   "gaps": {{
     "precision": [task - agent],
-    ...
+    "reasoning": [task - agent],
+    "tool_knowledge": [task - agent]
   }},
-  "total_gap": [最大缺口维度 或 加权和],
-  "gap_level": "L1/L2/L3",
+  "total_gap": [max(precision_gap, reasoning_gap, tool_knowledge_gap) + 其余维度加权],
+  "gap_level": "independent|light-hint|suggest|force-enhance|out-of-scope",
   "predicted_score": [100 - total_gap],
   "task_types": ["推断的任务类型列表"],
   "recommended_skill_types": ["建议的 skill 领域"]
 }}
 """
+
+# 五态常量（与 mdc 规则一致）
+GAP_INDEPENDENT = 5
+GAP_LIGHT_HINTS = 15
+GAP_SUGGEST = 30
+GAP_FORCE = 50
 
 
 class SkillForgeEngine:
@@ -113,9 +107,10 @@ class SkillForgeEngine:
     3. 根据返回的 gap_level 决定后续行为
     """
 
-    def __init__(self, gap_thresholds=(10, 25)):
-        self.l1_max = gap_thresholds[0]
-        self.l2_max = gap_thresholds[1]
+    def __init__(self, gap_thresholds=(GAP_SUGGEST, GAP_FORCE)):
+        # 兼容旧调用，但不再使用 l1_max/l2_max（已迁移到五态常量）
+        self._unused_l1 = gap_thresholds[0]
+        self._unused_l2 = gap_thresholds[1]
 
     def build_prompt(self, task_description: str) -> str:
         """构建 Phase 1 分析 Prompt"""
@@ -163,27 +158,33 @@ class SkillForgeEngine:
     def _classify_gap(
         self,
         gap: float
-    ) -> Literal["L1", "L2", "L3"]:
-        """根据缺口值分类"""
-        if gap < self.l1_max:
-            return "L1"
-        elif gap < self.l2_max:
-            return "L2"
+    ) -> Literal["independent", "light-hint", "suggest", "force-enhance", "out-of-scope"]:
+        """根据缺口值分类（与 mdc 规则五态一致）"""
+        if gap < GAP_INDEPENDENT:
+            return "independent"
+        elif gap < GAP_LIGHT_HINTS:
+            return "light-hint"
+        elif gap < GAP_SUGGEST:
+            return "suggest"
+        elif gap < GAP_FORCE:
+            return "force-enhance"
         else:
-            return "L3"
+            return "out-of-scope"
 
     def summarize_for_user(self, result: Phase1Result) -> str:
         """生成用户可见的预判摘要"""
-        level_descriptions = {
-            "L1": "任务与你的能力高度匹配，直接执行即可。",
-            "L2": "任务有一定挑战，建议考虑启用专业 skill 增强。",
-            "L3": "任务难度较高，当前能力可能有明显缺口，建议优先选择增强方案。"
+        state_descriptions = {
+            "independent": "任务与你的能力高度匹配，直接执行即可。",
+            "light-hint": "任务基本匹配，执行后轻提示有优化空间。",
+            "suggest": "任务有一定挑战，建议考虑启用 skill 增强。",
+            "force-enhance": "任务难度较高，建议优先选择增强方案。",
+            "out-of-scope": "任务超出当前能力边界，建议找专业人士。",
         }
 
         return (
             f"任务分析结果：\n"
             f"- 预估分数：{result.predicted_score} 分\n"
-            f"- 缺口等级：{result.gap_level}（{level_descriptions.get(result.gap_level, '')}）\n"
+            f"- 缺口等级：{result.gap_level}（{state_descriptions.get(result.gap_level, '')}）\n"
             f"- 缺口分：{result.gap} 分"
         )
 
@@ -321,7 +322,7 @@ class SkillForgeOrchestrator:
         engine = SkillForgeEngine()
         phase1 = engine.parse_analysis(llm_response)
 
-        task_type = phase1.task_types[0] if phase1.task_types else "other"
+        task_type = phase1.task_types[0] if phase1.task_types else "default"
 
         # Stage 4: 加载 L2 反思上下文（供外部注入或诊断）
         l2_context = self._load_l2_context(task_type)
@@ -424,7 +425,7 @@ class SkillForgeOrchestrator:
             phase4=Phase4Result(),  # 空占位，由 evaluate_and_close 填充
         )
 
-        phase4 = Phase4Result(actual_score=50.0, outcome="success")
+        phase4 = Phase4Result(actual_score=50.0, outcome="success", delta=0.0)
         if user_rating is not None:
             phase4 = self.evaluator.evaluate(trajectory, user_rating=user_rating)
             trajectory.phase4 = phase4  # 写回引用
@@ -466,39 +467,33 @@ class SkillForgeOrchestrator:
     def evaluate_and_close(
         self,
         result: SkillForgeResult,
-        actual_score: float,
-        user_rating: Optional[int] = None,
-        llm_self_rating: Optional[dict] = None,
+        user_rating: Optional[int] = None,  # 1（不满意）/ 3（一般）/ 5（满意）
+        delta: Optional[float] = None,       # 显式 delta（优先级高于 user_rating）
     ) -> SkillForgeResult:
         """
         Phase 4 评估 + 记忆闭环。
 
-        在外部执行完任务后调用，完成：
-        1. Phase 4 评估
-        2. L1 轨迹写入
-        3. L0 索引更新
-        4. skill effectiveness 校准
+        评分约定（与 evaluator.evaluate 保持一致）：
+        - actual = predicted（干活儿的质量以预估为准）
+        - delta = (user_rating - 3) * 20（若传 user_rating）
+        - 或 delta 直接传入（优先级最高）
         """
         t_close = time.monotonic()
-        # 评估
+
+        # Phase 4 评估
         phase4 = self.evaluator.evaluate(
             result.trajectory,
             user_rating=user_rating,
-            llm_self_rating=llm_self_rating,
-            tool_verification={"passed": actual_score >= 60, "test_count": 1}
-            if result.task_type == "code_generation"
-            else None,
         )
-        result.trajectory.phase4 = phase4  # 写回引用
-
-        # 用真实的 actual_score 更新 Phase4Result（保持 outcome 来自 evaluator）
-        phase4.actual_score = actual_score
+        # 若显式传了 delta，覆盖 evaluator 内部算的值
+        if delta is not None:
+            phase4.delta = delta
+        result.trajectory.phase4 = phase4
         result.phase4 = phase4
 
         # 反思（delta < -5 才生成）
-        delta = actual_score - result.trajectory.phase1.predicted_score
         reflection = None
-        if delta < -5:
+        if phase4.delta < -5:
             reflection = self.evaluator.generate_reflection(
                 result.trajectory, phase4
             )
@@ -518,7 +513,7 @@ class SkillForgeOrchestrator:
             )
             self.registry.update_effectiveness(
                 skill_id=result.trajectory.phase2.selected_skill.skill_id,
-                actual_gain=max(0, delta + est_gain),
+                actual_gain=max(0, phase4.delta + est_gain),
                 estimated_gain=max(0, est_gain),
             )
             self.registry.save()
@@ -532,15 +527,14 @@ class SkillForgeOrchestrator:
             phase4_ms=round(close_ms, 1),
             total_ms=round(close_ms, 1),
             predicted_score=result.trajectory.phase1.predicted_score,
-            actual_score=actual_score,
-            delta=delta,
+            actual_score=phase4.actual_score,
+            delta=phase4.delta,
             outcome=phase4.outcome,
             timestamp=datetime.now().isoformat(),
         )
         self._timing_logger.write(timing)
 
         # 更新返回结果
-        result.phase4 = phase4
         result.index_updated = closed["index_updated"]
         result.effectiveness_updated = (
             result.trajectory.phase2.selected_skill is not None

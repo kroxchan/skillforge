@@ -2,11 +2,13 @@
 
 > 如何添加、管理和扩展 SkillForge 的 skill 库
 
+> ⚠ **v0.2.6 重要变化**：Registry 已从"预设 5 个种子 skill"转向**涌现式生长**——`skills:` 默认为空，由 Forger 在同类任务累积 `count ≥ 5` 时自动生成 `memory/self-made/xxx-draft.md` 草稿。用户审核后用 `sf push` 入库。以下"内置种子 Skill"一节为历史参考，**当前版本不再预置任何 skill**。
+
 ---
 
-## 内置种子 Skill
+## 内置种子 Skill（历史参考，v0.2.6 已废弃）
 
-`skillforge-registry.yaml` 自带 5 个种子 skill：
+> v0.2.5 及之前 `skillforge-registry.yaml` 曾自带以下 5 个种子 skill：
 
 | Skill ID | 名称 | 适用任务 | 覆盖维度 |
 |---------|------|---------|---------|

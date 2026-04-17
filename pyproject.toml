@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "skillforge"
-version = "0.1.0"
+version = "0.2.9"
 description = "Agent Skill 增强系统 — 让 Agent 先自我诊断，再决定是否启用 skill 增强"
 readme = "README.md"
 license = "Apache-2.0"
@@ -40,6 +40,7 @@ dev = [
 
 [project.scripts]
 skillforge = "skillforge.cli:main"
+sf = "skillforge.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/skillforge"]

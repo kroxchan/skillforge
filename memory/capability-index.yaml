@@ -1,61 +1,55 @@
 # Capability Index — SkillForge 记忆索引
 # L0: 能力概要索引（Agent 启动时注入，<500 tokens）
 #
-# 设计依据：
-#   - SkillReducer (2025): tiered architecture，核心常驻 + 补充按需
-#   - SkillRouter (2025): full-text 是关键路由信号，但不可全量注入
-#   - Meta-Policy Reflexion (2025): 提取为 predicate-like rules，减少冗余
+# 设计依据（v0.2.7 涌现式）：
+#   - 条目不预置，而是在 `sf update-l0` 首次写入某 task_type 时动态创建
+#   - 条目代表"你真实做过的工作类型"，不依赖 Registry 预设
+#   - task_type 由 Agent 在 Cursor 对话路径自主命名（snake_case）
+#   - Registry 空时，本文件只有 `default` + 有真实 count 的条目
 #
-# 格式：task_type → (执行次数, 平均Delta, 趋势, Gap调整值)
-# 更新来源：Phase 4 评估后自动写入
+# 格式：task_type → (count, avg_delta, trend, gap_adjustment)
+# 更新来源：Phase 4 评估后由 `sf update-l0` helper 写入（原子写，不手动编辑）
+#
+# 条目维护规则：
+#   - 条目在首次调用 `sf update-l0 --task-type <tt>` 时自动创建
+#   - 只有 count > 0 的条目代表真实工作积累
+#   - 实在无法分类时用 default（兜底，保证永远存在）
 
 task_type_index:
-  code_generation:
-    count: 0
-    avg_delta: 0.0       # Delta = 实际分 - 预估分（移动平均）
-    trend: stable        # stable | improving | degrading
-    gap_adjustment: 0    # 预判分数的偏差修正值（累计）
-
-  code_review:
-    count: 0
-    avg_delta: 0.0
-    trend: stable
-    gap_adjustment: 0
-
-  research:
-    count: 0
-    avg_delta: 0.0
-    trend: stable
-    gap_adjustment: 0
-
-  seo:
-    count: 0
-    avg_delta: 0.0
-    trend: stable
-    gap_adjustment: 0
-
-  kol_outreach:
-    count: 0
-    avg_delta: 0.0
-    trend: stable
-    gap_adjustment: 0
-
-  data_analysis:
-    count: 0
-    avg_delta: 0.0
-    trend: stable
-    gap_adjustment: 0
 
   default:
     count: 0
+    avg_delta: 0.0       # Delta = (rating-3)*20 的 EMA 移动平均（alpha=0.2）
+    trend: stable        # stable | improving | degrading（count<5 时不更新）
+    gap_adjustment: 0    # 叠加到 Phase 1 原始 Gap 的修正值 = round(avg_delta*2)
+
+  refactoring:
+    count: 2
     avg_delta: 0.0
     trend: stable
     gap_adjustment: 0
+    # [sf-v0.2.1-fix] 2026-04-17T10:00 SkillForge 架构审查 + 8 文件修复 | S=90 | rating=3 | delta=+0
+    # [sf-v0.2.2-fix] 2026-04-17T10:00 Phase 4 默认基线化 + 禁止主动询问打分 | S=92 | rating=3 | delta=+0
 
-# 元信息
+  architecture_review:
+    count: 1
+    avg_delta: 0.0
+    trend: stable
+    gap_adjustment: 0
+    # [sf-bd44559b] 2026-04-17T10:00 v0.2.7 第五轮复审 9 漏洞清单写入 DEVLOG | S=78 | rating=3 | delta=+0
+
+
+  cwd_integration_test:
+    count: 2
+    avg_delta: 0.00
+    trend: stable
+    gap_adjustment: 0
+    # [sf-62a3b93b] 2026-04-17T20:33 CWD 独立性集成测试 | S=80 | rating=3 | delta=+0
+    # [sf-4a8960f4] 2026-04-17T20:55 CWD 独立性集成测试 | S=80 | rating=3 | delta=+0
+
 _meta:
   version: "1.0"
-  updated_at: "2026-04-15"
-  last_task_id: null
-  total_executed: 0
-  global_gap_adjustment: 0  # 全局修正值，补偿系统级预判偏差
+  updated_at: "2026-04-17"
+  last_task_id: sf-4a8960f4
+  total_executed: 5
+  global_gap_adjustment: 0

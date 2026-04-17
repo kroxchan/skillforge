@@ -33,7 +33,7 @@ class Skill(BaseModel):
     domain: list[str] = Field(default_factory=list)
     task_types: list[str] = Field(default_factory=list)
     capability_gains: dict[str, float] = Field(default_factory=dict)
-    quality_tier: Literal["L1", "L2", "L3"] = "L2"
+    quality_tier: Literal["unknown", "L1", "L2", "L3"] = "unknown"
     usage_count: int = 0
     avg_effectiveness: float = 0.7
     source: Literal["local", "community", "autoforge"] = "local"
@@ -55,7 +55,7 @@ class Phase1Result(BaseModel):
     predicted_score: float = 50.0
     task_difficulty: float = 70.0
     gap: float = 20.0
-    gap_level: Literal["L1", "L2", "L3"] = "L2"
+    gap_level: Literal["independent", "light-hint", "suggest", "force-enhance", "out-of-scope"] = "suggest"
     capability_dimensions: dict[str, Any] = Field(default_factory=dict)
     task_types: list[str] = Field(default_factory=list)
     recommended_skill_types: list[str] = Field(default_factory=list)
@@ -78,6 +78,7 @@ class Phase3Result(BaseModel):
 class Phase4Result(BaseModel):
     actual_score: float = 50.0
     outcome: Literal["success", "success_within_tolerance", "patch_needed"] = "success"
+    delta: float = 0.0  # 用户感受与预估的偏差：(rating-3)*20，用于校准 gap_adjustment
     user_rating: Optional[int] = None
     reflection: Optional[str] = None
     # Stage 3: MAR 多角色辩论结果（由 MARCoordinator.evaluate() 填充）

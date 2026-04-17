@@ -36,30 +36,82 @@ class EnhancementExecutor:
         """
         构建增强后的 system prompt。
 
-        Args:
-            skill: 要注入的 skill（None = 无 skill）
-            task_context: Phase 1 分析结果
-            task_description: 原始任务描述
-
-        Returns:
-            拼接后的完整 system prompt
+        注入优先级：
+        1. skill.path 存在且非空 → 读取真实 SKILL.md 文件
+        2. skill.path 为空或文件不存在 → 根据元数据动态合成最小 skill 卡片
+        3. skill 为 None → 仅注入任务上下文
         """
         sections = [self.base_system_prompt]
 
         # Skill 内容注入
         if skill:
-            skill_path = Path(skill.path)
-            if skill_path.exists():
+            skill_path = Path(skill.path) if skill.path else None
+            if skill_path and skill_path.exists():
                 skill_content = skill_path.read_text(encoding="utf-8")
                 sections.append(f"\n\n## 启用 Skill: {skill.name}\n\n{skill_content}")
             else:
-                sections.append(f"\n\n## 启用 Skill: {skill.name}\n\n[Skill 文件不存在：{skill.path}]")
+                # 虚拟 Skill 模式：根据元数据合成最小 skill 卡片（ADR-008）
+                synthesized = self._synthesize_minimal_skill_card(skill)
+                sections.append(f"\n\n## 启用 Skill: {skill.name}\n\n{synthesized}")
 
         # 任务上下文
         if task_context:
             sections.append(f"\n\n## 当前任务\n\n{task_description}\n\n## 任务分析\n\n{task_context}")
 
         return "\n\n---\n\n".join(sections)
+
+    def _synthesize_minimal_skill_card(self, skill: Skill) -> str:
+        """
+        根据 skill 元数据合成最小 skill 卡片（ADR-008 虚拟 Skill 机制）。
+
+        合成结构：
+        ## {name}
+        > {description}
+        ### 适用任务类型
+        - {task_type} ...
+        ### 能力覆盖维度
+        | 维度 | 覆盖 |
+        |------|------|
+        | prec | +N |
+        ...
+        ### 使用建议
+        {trigger_keywords 的使用指导}
+        ### 注意事项
+        {根据 capability_gains 推断的边界}
+        """
+        lines = []
+        if skill.description:
+            lines.append(f">{skill.description.strip()}\n")
+
+        if skill.task_types:
+            lines.append("### 适用任务类型\n")
+            for tt in skill.task_types:
+                lines.append(f"- **{tt}**")
+            lines.append("")
+
+        if skill.capability_gains:
+            lines.append("### 能力覆盖维度\n")
+            lines.append("| 维度 | 覆盖加分 |")
+            lines.append("|------|----------|")
+            for dim, gain in skill.capability_gains.items():
+                lines.append(f"| {dim} | +{gain:.0f} 分 |")
+            lines.append("")
+
+        if skill.trigger_keywords:
+            lines.append("### 核心原则\n")
+            for kw in skill.trigger_keywords:
+                lines.append(f"- 当遇到 **{kw}** 时，优先参考本 skill 的指导原则")
+            lines.append("")
+
+        if skill.domain:
+            lines.append(f"### 领域\n")
+            lines.append(f"覆盖领域：{', '.join(skill.domain)}\n")
+
+        lines.append("### 注意事项\n")
+        lines.append("- 本 skill 根据元数据动态合成，内容可能不完整")
+        lines.append("- 如需完整指导，请提供真实的 SKILL.md 文件\n")
+
+        return "\n".join(lines)
 
     def save_trajectory(
         self,
@@ -141,7 +193,7 @@ class EnhancementExecutor:
                 "",
                 f"- 实际分 A：{trajectory.phase4.actual_score}",
                 f"- 结果：{trajectory.phase4.outcome}",
-                f"- Delta（S-A）：{trajectory.phase1.predicted_score - trajectory.phase4.actual_score:.1f}",
+                f"- Delta（S-A）：{trajectory.phase4.delta:+.1f}",
             ])
 
         lines.append("")
@@ -222,9 +274,6 @@ class SandboxRunner:
             }
 
         self.runner_dir.mkdir(parents=True, exist_ok=True)
-        suffix = {".py": "python", ".js": "javascript", ".sh": "shell"}.get(
-            Path(code).suffix, ""
-        )
         ext = {".py": ".py", "python": ".py", ".js": ".js", "javascript": ".js", ".sh": ".sh", "shell": ".sh"}.get(
             language, ".txt"
         )

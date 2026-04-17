@@ -1,5 +1,7 @@
 # SkillForge: Agent Skill 增强系统 PRD
 
+> **权威版本说明**：在 Cursor 对话场景下，`.cursor/rules/skillforge.mdc` 是权威执行版本。PRD 描述的是设计意图，PRD 与 mdc 规则不一致时，以 mdc 规则为准。
+
 > 让 Agent 在执行任务前先"自我诊断"，主动识别能力缺口，并通过 skill 增强、回退坦白或自创建 skill 来保证任务质量。通用设计，谁拿来都能用。
 
 ---
@@ -227,36 +229,52 @@ Agent 输出: [结构化审查报告]
 
 ## 五、Phase 4: 质量评估与自改进闭环
 
-### 5.1 分数对比与 Gap 分析
+### 5.1 评分约定
 
 ```
-Phase 1 预测分 S = 62
-Phase 4 实际分 A = 58  →  A < S - δ → 触发 patch
+actual = predicted（干活儿的质量以预估为准）
+delta  = (user_rating - 3) * 20
 
-Phase 4 反思输出：
-"预估 62，实际 58，差 4 分。原因是：边界条件处理不够细致。
-建议：启用 boundary-handling-skill，下轮同类任务预估可提升到 71。"
+| 用户评分 | delta | 含义 |
+|---------|-------|------|
+| 5 | +40 | 超预期 |
+| 3 | 0 | 符合预期 |
+| 1 | -40 | 低于预期 |
+
+delta < -5 → 触发反思（写入 memory/reflections.md）
 ```
 
-### 5.2 Patch 流程（类 Reflexion）
+### 5.2 评分机制（v0.2.2 默认基线版）
 
-当 A < S - δ 时：
+**核心原则**：默认 `rating=3`，评分是 Agent 的内部静默行为，**禁止主动询问用户打分**。
 
-1. 记录失败轨迹到 `memory/trajectories/{task_hash}.md`
-2. 提取失败根因（工具调用错误 / 推理偏差 / 知识缺口 / 格式错误）
-3. 将反思写入 `memory/reflections.md`
-4. 若有 Reflexion memory 可用，引导下一轮重试
+| 用户评分 | 触发条件 | delta |
+|---------|---------|-------|
+| 1 | 用户明确表达不满、指出错误、要求重做 | -40 |
+| 3 | **默认**——任何非 1 的情况（含满意、沉默、提下一任务） | 0 |
+| 5 | **罕见**——用户明确表达惊喜（如"太棒了"、"超出预期"） | +40 |
 
-### 5.3 Skill 自创建触发
+**执行步骤**：
 
-```yaml
-workflow_pattern:
-  task_type: "github_pr_review"
-  occurrences: 3
-  success_rate: 0.67
-  avg_quality_improvement: +8.5
-  recommendation: "可生成 SKILL.md 草稿，建议审核后入库"
-```
+1. 当下一轮用户消息进来时，扫描反馈判断 rating（默认 3）
+2. **直接更新** `memory/capability-index.yaml` 对应 task_type：
+   - `count += 1`
+   - `avg_delta = 0.2 × current_delta + 0.8 × old_avg_delta`（EMA，α=0.2）
+   - `gap_adjustment += current_delta`
+3. 若 rating=1，追加反思到 `memory/reflections.md`
+
+**关键约束**：
+
+- Phase 4 由**下一轮用户消息**回溯触发，对用户完全透明
+- Agent **不得**在回复末尾询问打分，**不得**主动暴露自评分数
+- 由于默认 rating=3 → delta=0，大部分任务仅 `count += 1`，不会扰动 gap_adjustment。只有 rating=1/5 才真正移动校准值
+
+> **v0.2.2 变更**：评分从"主动询问 1/3/5"改为"默认 3 + 识别偏离"，移除了打扰用户的主动打分环节。
+> **v0.2.1 遗产**：L0 索引仍在对话内直接原子更新，不依赖外部命令。
+
+### 5.3 自改进触发
+
+当同一 task_type 成功执行 ≥5 次时，生成 SKILL.md 草稿（需用户审核确认）。
 
 ---
 
@@ -274,7 +292,12 @@ workflow_pattern:
     "predicted_score": 62,
     "task_difficulty": 85,
     "detected_gap": 23,
-    "gap_level": "L2",
+    "gap_level": "suggest",
+    "capability_dimensions": {
+      "precision": 20,
+      "reasoning": 15,
+      "tool_knowledge": 23
+    },
     "matched_skills": ["github-api-skill", "code-review-skill"]
   },
   "phase2": {
@@ -309,10 +332,8 @@ workflow_pattern:
       "task_types": "string[]",
       "capability_gains": {
         "precision": "number",
-        "creativity": "number",
-        "domain_knowledge": "number",
-        "tool_usage": "number",
-        "reasoning": "number"
+        "reasoning": "number",
+        "tool_knowledge": "number"
       },
       "quality_tier": "L1|L2|L3",
       "effectiveness_history": ["number[]"],
@@ -322,6 +343,11 @@ workflow_pattern:
     }
   ]
 }
+
+> **capability_gains 维度说明**（v0.2 简化版）：
+> - `precision`: 数据准确性提升（幻觉风险高的任务此项更重要）
+> - `reasoning`: 复杂逻辑推理能力提升
+> - `tool_knowledge`: 工具调用和细分领域知识提升
 ```
 
 ---

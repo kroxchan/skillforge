@@ -278,7 +278,7 @@ class ReflectionLoader:
 
 def quick_reflexion_context(
     memory_dir: str = "memory",
-    task_type: str = "other",
+    task_type: str = "default",
     max_entries: int = 5,
 ) -> str:
     """快速加载 L2 反思上下文（单次调用）"""

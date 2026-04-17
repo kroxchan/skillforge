@@ -9,10 +9,10 @@ gap_thresholds:
   # Gap ≥ 50 → 超边界，拒绝执行
 
 # Phase 1 预判引擎配置
+# 注意：Cursor 对话场景下 Phase 1 在 mdc 规则内完成，此配置仅用于 Python Engine 批量场景
 prediction:
   model: "gpt-4o-mini"           # 用于能力预判的模型（轻量即可）
   prompt_template: "detailed"     # "detailed" | "quick"
-  calibration_enabled: true      # 是否启用预判校准
 
 # Phase 2 Skill 雷达配置
 radar:
@@ -22,12 +22,10 @@ radar:
 
 # Phase 4 评估配置
 evaluation:
-  default_weight:
-    user: 0.6        # 用户评分权重
-    llm_self: 0.3    # LLM 自评权重
-    tool: 0.1        # 工具验证权重
-  patch_threshold: 5   # A < S - 5 → 触发 patch
-  forger_trigger: 3    # 同一 task_type 出现 3 次 → 触发自创建
+  # delta 阈值（delta < -5 时触发反思）
+  patch_threshold: 5
+  # 同一 task_type 成功执行 ≥此值 才触发自创建 skill
+  forger_trigger: 5
 
 # 自创建 Skill 配置
 forger:
@@ -115,9 +113,3 @@ agent_integration:
   mode: "cursor_rule"    # "cursor_rule" | "api" | "standalone"
   skill_priority: "high"  # SkillForge 的优先级（高于普通 skill）
   auto_activate: true     # 是否对所有任务自动激活分析
-
-# 输出控制
-output:
-  verbose: false          # 是否输出详细诊断信息
-  show_predictions: true  # 是否向用户展示预估分数
-  show_recommendations: true  # 是否向用户展示 skill 推荐

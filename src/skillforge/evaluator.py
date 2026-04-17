@@ -31,10 +31,6 @@ class QualityEvaluator:
 
     def __init__(
         self,
-        user_weight: float = 0.6,
-        llm_self_weight: float = 0.3,
-        tool_weight: float = 0.1,
-        patch_threshold: float = 5.0,
         index_mgr: Optional[IndexManager] = None,
         mar_coordinator: Optional[MARCoordinator] = None,
         hybrid_matcher: Optional[HybridSkillMatcher] = None,
@@ -42,19 +38,11 @@ class QualityEvaluator:
     ):
         """
         Args:
-            user_weight: 用户评分权重
-            llm_self_weight: LLM 自评权重
-            tool_weight: 工具验证权重
-            patch_threshold: delta 容忍阈值
             index_mgr: L0 索引管理器（共享实例避免多实例覆盖）
             mar_coordinator: MAR 多角色辩论协调器（Stage 3，可选）
             hybrid_matcher: 混合检索匹配器（Stage 3，可选）
             memory_dir: 记忆目录（用于 L2 反思写入路径）
         """
-        self.user_weight = user_weight
-        self.llm_self_weight = llm_self_weight
-        self.tool_weight = tool_weight
-        self.patch_threshold = patch_threshold
         if index_mgr is not None:
             self.index_mgr = index_mgr
         else:
@@ -69,43 +57,41 @@ class QualityEvaluator:
     def evaluate(
         self,
         trajectory: Trajectory,
-        user_rating: Optional[int] = None,      # 1-5 星
-        llm_self_rating: Optional[dict] = None,  # {"accuracy": 4, ...}
-        tool_verification: Optional[dict] = None  # {"passed": True, "test_count": 5}
+        user_rating: Optional[int] = None,  # 1（不满意）/ 3（一般）/ 5（满意）
     ) -> Phase4Result:
         """
         执行质量评估。
 
+        评分约定：
+        - actual = predicted（干活儿的质量以预估为准，用户打分不改变实际分数）
+        - delta = (user_rating - 3) * 20（用户感受与预估的偏差）
+
         Args:
             trajectory: 完整执行轨迹
             user_rating: 用户评分（1-5）
-            llm_self_rating: LLM 自评分（各维度 1-5）
-            tool_verification: 工具验证结果（如代码测试通过数）
 
         Returns:
-            Phase4Result，包含实际分、结果判定、反思等
+            Phase4Result，包含实际分、结果判定、delta 等
         """
-        actual_score = self._compute_score(
-            user_rating, llm_self_rating, tool_verification
-        )
-
         predicted = trajectory.phase1.predicted_score
-        delta = actual_score - predicted
+        actual_score = predicted
+        delta = (user_rating - 3) * 20 if user_rating is not None else 0
 
         # 判定结果
-        if delta >= -self.patch_threshold:
+        # 评分约定下 rating ∈ {1, 3, 5}，delta ∈ {-40, 0, +40}
+        # 保留 -5 阈值以兼容外部精细 delta（如未来工具自动评分、LLM 自评）
+        if delta >= -5:
             outcome = "success"
-        elif delta >= -self.patch_threshold * 2:
-            outcome = "success_within_tolerance"
         else:
             outcome = "patch_needed"
 
         return Phase4Result(
             actual_score=actual_score,
             outcome=outcome,
+            delta=delta,
             user_rating=user_rating,
-            reflection=None,  # 后面生成
-            mar_result=None,  # 后面由 finalize() 填充（MAR 启用时）
+            reflection=None,
+            mar_result=None,
         )
 
     def finalize(
@@ -121,7 +107,7 @@ class QualityEvaluator:
         Stage 3 MAR: 若 mar_coordinator 已注入，在写盘前执行多角色辩论评估，
         并将结果写入 phase4.mar_result。
         """
-        task_type = trajectory.task_type or "other"
+        task_type = trajectory.task_type or "default"
 
         # Stage 3: MAR 多角色辩论评估（若启用）
         if self.mar is not None:
@@ -137,11 +123,12 @@ class QualityEvaluator:
         # 1. 写入 L1 轨迹（memory/trajectories/{task_type}/{task_id}.json）
         self._write_trajectory(trajectory, phase4)
 
-        # 2. 更新 L0 Capability Index
+        # 2. 更新 L0 Capability Index（delta 由 evaluate() 算好，直接复用）
         self.index_mgr.update(
             task_type=task_type,
             predicted_score=trajectory.phase1.predicted_score,
             actual_score=phase4.actual_score,
+            delta=phase4.delta,
             timestamp=datetime.now().isoformat(),
         )
 
@@ -161,8 +148,8 @@ class QualityEvaluator:
         phase4: Phase4Result,
     ):
         """写入 L1 轨迹 JSON"""
-        task_type = trajectory.task_type or "other"
-        traj_dir = Path("memory") / "trajectories" / task_type
+        task_type = trajectory.task_type or "default"
+        traj_dir = self._memory_dir / "trajectories" / task_type
         traj_dir.mkdir(parents=True, exist_ok=True)
 
         traj_file = traj_dir / f"{trajectory.task_id}.json"
@@ -192,7 +179,7 @@ class QualityEvaluator:
                 "actual_score": phase4.actual_score,
                 "outcome": phase4.outcome,
                 "user_rating": phase4.user_rating,
-                "delta": phase4.actual_score - trajectory.phase1.predicted_score,
+                "delta": phase4.delta,
             },
         }
 
@@ -250,7 +237,7 @@ class QualityEvaluator:
         """
         predicted = trajectory.phase1.predicted_score
         actual = phase4.actual_score
-        delta = actual - predicted
+        delta = phase4.delta  # 直接用 Phase4Result 里存好的 delta
 
         # 分析根因
         root_causes = self._analyze_root_cause(trajectory, delta)
@@ -313,40 +300,6 @@ class QualityEvaluator:
 
 ---
 """
-
-    def _compute_score(
-        self,
-        user_rating: Optional[int],
-        llm_self_rating: Optional[dict],
-        tool_verification: Optional[dict]
-    ) -> float:
-        """计算加权实际分（0-100）"""
-        scores = []
-        weights = []
-
-        if user_rating is not None:
-            scores.append(user_rating / 5 * 100)  # 1-5 → 0-100
-            weights.append(self.user_weight)
-
-        if llm_self_rating:
-            avg = sum(llm_self_rating.values()) / len(llm_self_rating)
-            scores.append(avg / 5 * 100)
-            weights.append(self.llm_self_weight)
-
-        if tool_verification:
-            if tool_verification.get("passed"):
-                scores.append(100)
-            else:
-                passed = tool_verification.get("passed_count", 0)
-                total = tool_verification.get("test_count", 1)
-                scores.append(passed / total * 100)
-            weights.append(self.tool_weight)
-
-        if not scores:
-            return 50  # 默认中分
-
-        total_weight = sum(weights)
-        return sum(s * w for s, w in zip(scores, weights)) / total_weight
 
     def _analyze_root_cause(
         self,

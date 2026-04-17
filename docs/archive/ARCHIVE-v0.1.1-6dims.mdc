@@ -1,10 +1,19 @@
----
-description: SkillForge — 当收到明确任务时，先自我诊断能力缺口（五态 Gap 判断），再决定是否启用 skill 增强；任务失败时触发反思并记录教训
-globs:
-alwaysApply: true
----
+# SkillForge: Agent Skill 增强规则（历史版本 — 6 维）
 
-# SkillForge: Agent Skill 增强规则
+> ## ⚠️ 归档说明
+> 此文件已归档，不再维护。
+>
+> **当前权威版本**：`.cursor/rules/skillforge.mdc`（3 维版本）
+>
+> 此版本存在以下已废弃的设计：
+> - 6 维度诊断（v0.2.0 已统一为 3 维：prec/reas/tool）
+> - Phase 4 依赖外部 `sf ingest` 命令同步 L0 索引（v0.2.1 已改为直接写入）
+> - 无被动反馈识别机制
+>
+> 归档时间：2026-04-17（v0.2.1 审查后）
+> 原版本：v0.1.1（6 维）
+
+---
 
 > 当你收到任务时，先自我诊断能力缺口，再决定是否启用 skill 增强。
 

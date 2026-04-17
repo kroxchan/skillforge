@@ -1,160 +1,36 @@
 version: '1.0'
-updated_at: '2026-04-16'
-skills:
-- skill_id: code-expert
-  name: Code Expert Skill
-  description: 编程开发专家，处理代码生成、调试、重构等任务
-  domain:
-  - programming
-  - development
-  task_types:
-  - code_generation
-  - refactoring
-  - debugging
-  - code_review
-  - algorithm_design
-  capability_gains:
-    creativity: 5.0
-    domain_knowledge: 5.0
-    precision: 20.0
-    reasoning: 10.0
-    speed: -5.0
-    tool_usage: 15.0
-  quality_tier: L3
-  usage_count: 1
-  avg_effectiveness: 0.93
-  source: local
-  path: .cursor/skills/code-expert/SKILL.md
-  trigger_keywords:
-  - 写代码
-  - 帮我写
-  - 代码
-  - function
-  - Python
-  - JavaScript
-  - debug
-  - refactor
-- skill_id: seo-analysis
-  name: SEO Analysis Skill
-  description: SEO 分析与内容优化专家，提升网站搜索排名
-  domain:
-  - marketing
-  - seo
-  - content
-  task_types:
-  - content_analysis
-  - keyword_research
-  - competitor_analysis
-  - content_optimization
-  - backlink_analysis
-  capability_gains:
-    creativity: 5.0
-    domain_knowledge: 25.0
-    precision: 10.0
-    reasoning: 10.0
-    speed: 0.0
-    tool_usage: 5.0
-  quality_tier: L2
-  usage_count: 0
-  avg_effectiveness: 0.75
-  source: local
-  path: .cursor/skills/seo-analysis/SKILL.md
-  trigger_keywords:
-  - SEO
-  - 搜索引擎优化
-  - 关键词
-  - 网站排名
-  - 内容营销
-- skill_id: data-analysis
-  name: Data Analysis Skill
-  description: 数据处理与可视化专家，从数据中提取洞察
-  domain:
-  - data_science
-  - analytics
-  task_types:
-  - data_cleaning
-  - statistical_analysis
-  - visualization
-  - report_generation
-  - dashboard_design
-  capability_gains:
-    creativity: 5.0
-    domain_knowledge: 20.0
-    precision: 15.0
-    reasoning: 15.0
-    speed: -10.0
-    tool_usage: 10.0
-  quality_tier: L2
-  usage_count: 0
-  avg_effectiveness: 0.78
-  source: local
-  path: .cursor/skills/data-analysis/SKILL.md
-  trigger_keywords:
-  - 数据分析
-  - 统计
-  - 可视化
-  - 报表
-  - CSV
-  - chart
-- skill_id: research
-  name: Research Skill
-  description: 学术研究与调研分析，处理文献综述、事实核查等任务
-  domain:
-  - research
-  - academic
-  task_types:
-  - literature_review
-  - fact_checking
-  - comparative_analysis
-  - report_writing
-  - hypothesis_development
-  capability_gains:
-    creativity: 10.0
-    domain_knowledge: 15.0
-    precision: 20.0
-    reasoning: 15.0
-    speed: -15.0
-    tool_usage: 5.0
-  quality_tier: L2
-  usage_count: 0
-  avg_effectiveness: 0.72
-  source: local
-  path: .cursor/skills/research/SKILL.md
-  trigger_keywords:
-  - 研究
-  - 调研
-  - 文献
-  - 论文
-  - 调查报告
-- skill_id: video-production
-  name: Video Production Skill
-  description: 视频处理与媒体制作，处理视频剪辑、格式转换等任务
-  domain:
-  - video
-  - media
-  - content
-  task_types:
-  - video_editing
-  - format_conversion
-  - audio_processing
-  - thumbnail_design
-  - script_writing
-  capability_gains:
-    creativity: 15.0
-    domain_knowledge: 10.0
-    precision: 10.0
-    reasoning: 5.0
-    speed: -10.0
-    tool_usage: 25.0
-  quality_tier: L2
-  usage_count: 0
-  avg_effectiveness: 0.7
-  source: local
-  path: .cursor/skills/video-production/SKILL.md
-  trigger_keywords:
-  - 视频
-  - 剪辑
-  - FFmpeg
-  - MP4
-  - 字幕
-  - GIF
+updated_at: '2026-04-17'
+
+# SkillForge Skill Registry
+#
+# 【v0.2.6 起：涌现式生长】
+# 此 Registry 默认为空。skill 不由设计阶段预设，
+# 而是由 Agent 在真实工作中发现 —— Phase 4 检测到某 task_type
+# 累计 count ≥ 5 时，Forger 自动生成 SKILL.md 轻量骨架草稿
+# 至 memory/self-made/，供用户审核后 `sf push` 入库。
+#
+# capability_gains 维度说明（v0.2 统一 3 维）：
+#   precision:      数据准确性提升（幻觉风险高的任务此项更重要）
+#   reasoning:      复杂逻辑推理能力提升
+#   tool_knowledge: 工具调用和细分领域知识提升
+#
+# 数值语义：
+#   - 当前值为**设计意图估算**（非真实验证数据）
+#   - 每个条目标注「预估」，由 Phase 4 真实反馈逐步校准
+#   - 当某 skill 累计 usage_count ≥ 10 时，应转为「已校准」状态
+#
+# quality_tier 语义：
+#   L1:      经大规模真实数据验证（usage ≥ 50 且 avg_delta ≥ +5）
+#   L2:      设计意图估算（默认状态，待验证）
+#   L3:      实验性 / 未经验证
+#   unknown: 无数据基础，暂不建议用于 Phase 2 推荐
+#
+# 添加新 skill 的路径（推荐）：
+#   1. 让系统自然运行，Forger 在同类任务 ≥5 次后生成草稿
+#   2. 审核 memory/self-made/<task_type>-draft-*.md
+#   3. 完善内容后运行 `sf push memory/self-made/xxx-draft.md`
+#
+# 或手动添加：
+#   `sf push path/to/your/SKILL.md`
+
+skills: []
