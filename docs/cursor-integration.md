@@ -155,6 +155,26 @@ sf demand-queue                                  # 看距离触发还差多远
 sf push memory/self-made/refactoring-draft-2026-04-17.md
 ```
 
+### task_type 命名粒度（影响 Forger 能否触发）
+
+Agent 在 Phase 4 自主为任务取 snake_case 标签。**命名粒度直接决定 Forger 是否能触发**：
+
+| 类别 | 示例 | 后果 |
+|------|------|------|
+| ✅ 2-3 词 / 领域+类型 | `refactoring` · `linktree_pipeline` · `figma_to_code` | 同类任务复用标签，count 稳步累积 |
+| ❌ 4+ 词 / 含动词 | `video_linktree_analysis_implementation` | 每次命名都不一样，count 永远停 1 |
+| ❌ 含项目细节 | `fix_config_path_absolutization` | 换个项目就不匹配，无法累积 |
+
+判断标准：**同类工作换个项目，这个 task_type 还能用吗？** 能 → 合格；不能 → 太具体了。
+
+查看现状：
+
+```bash
+sf demand-queue        # 能直接看出有没有过细标签（大量 count=1 就是信号）
+```
+
+如果发现已有过细条目，**不要手动改 YAML**（会绕过审计管线）；下次同类任务改用正确的粗粒度标签从 0 累积即可，过细的历史条目作为"教训化石"留存。
+
 ---
 
 ## 常见问题

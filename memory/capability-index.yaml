@@ -40,16 +40,32 @@ task_type_index:
 
 
   cwd_integration_test:
-    count: 2
+    count: 3
     avg_delta: 0.00
     trend: stable
     gap_adjustment: 0
     # [sf-62a3b93b] 2026-04-17T20:33 CWD 独立性集成测试 | S=80 | rating=3 | delta=+0
     # [sf-4a8960f4] 2026-04-17T20:55 CWD 独立性集成测试 | S=80 | rating=3 | delta=+0
+    # [sf-1b14cd35] 2026-04-21T13:01 CWD 独立性集成测试 | S=80 | rating=3 | delta=+0
+
+  video_linktree_analysis_implementation:
+    count: 1
+    avg_delta: 0.00
+    trend: stable
+    gap_adjustment: 0
+    # [sf-a20d3aea] 2026-04-20T16:33 Analyze + implement opening line + tag logic in video-linktree pipeline | S=85 | rating=3 | delta=+0
+
+
+  linktree_page_pipeline:
+    count: 1
+    avg_delta: 0.00
+    trend: stable
+    gap_adjustment: 0
+    # [sf-f86cd744] 2026-04-20T17:55 Linktree scrape+import+register hailey_dlynn UAT | S=80 | rating=3 | delta=+0
 
 _meta:
   version: "1.0"
-  updated_at: "2026-04-17"
-  last_task_id: sf-4a8960f4
-  total_executed: 5
+  updated_at: "2026-04-21"
+  last_task_id: sf-1b14cd35
+  total_executed: 8
   global_gap_adjustment: 0

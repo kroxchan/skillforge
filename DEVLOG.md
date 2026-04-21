@@ -11,7 +11,7 @@
 | 项目名 | SkillForge |
 | 仓库 | https://github.com/kroxchan/skillforge |
 | 许可证 | Apache 2.0 |
-| 当前版本 | **v0.2.9-review** — 进入纯使用模式，等真实数据积累后再 review |
+| 当前版本 | **v0.2.9-patch** — 真实数据驱动的 task_type 命名粒度约束 |
 | 测试基线 | **159 passed** |
 | 最后更新 | 2026-04-17 |
 
@@ -70,6 +70,7 @@
   - [v0.2.7 (2026-04-17)](#v027-2026-04-17--涌现一致性扫荡)
   - [v0.2.8 (2026-04-17)](#v028-2026-04-17--cwd-独立性修复)
   - [v0.2.9-review (2026-04-17)](#v029-review-2026-04-17--复审回报递减拐点--进入纯使用模式)
+  - [v0.2.9-patch (2026-04-17)](#v029-patch-2026-04-17--task_type-命名粒度约束真实数据驱动)
 - [架构决策记录 (ADR)](#架构决策记录-adr)
 - [已知技术债务](#已知技术债务)
 - [反思记录](#反思记录)
@@ -448,6 +449,36 @@ L0 索引不存在: memory/capability-index.yaml
 2. Forger 首次真实触发（某 task_type 达 count ≥ 5）
 3. 2 周时间到（约 2026-05-01）
 4. 遇到明显的使用层 bug / 体验问题
+
+---
+
+### v0.2.9-patch (2026-04-17) — task_type 命名粒度约束（真实数据驱动）
+
+**状态**: 完成 | 测试 159 passed（无代码变更，只改 mdc + doc）
+**触发**: 纯使用模式下首次发现**具体问题**——L0 累积到 7 条时，出现 `video_linktree_analysis_implementation`（4 词+动词）和 `linktree_page_pipeline`（"page" 太具体）两条过细命名，语义相同但不会合并，count 永远停在 1，Forger 永远不触发
+
+#### 核心变更
+
+- **mdc Phase 4 `task_type 选择规则` 增加粒度约束**（两份 mdc 同步：`~/.cursor/rules/skillforge.mdc` + `<workspace>/.cursor/rules/skillforge.mdc`）：
+  - 明确要求 **2-3 个词**，领域+类型抽象组合，不含具体动作/项目细节
+  - 附**真实错误示例**（从 L0 真实数据提取，不是假设）：
+    - `video_linktree_analysis_implementation` → 应改为 `linktree_pipeline`
+    - `linktree_page_pipeline` → 应改为 `linktree_pipeline`
+  - 新增判断标准：**同类工作换个项目，这个 task_type 还能用吗？** 能 → 合格
+- **文档同步**（`integrations/AGENTS.md` / `docs/cursor-integration.md` / `docs/skill-registry.md`）：补充命名粒度小节
+
+#### 决策：不合并历史过细条目
+
+- `sf` 无 rename / merge 命令；StrReplace 改 YAML 被 mdc 明确禁止（绕过 EMA + 审计管线）
+- 为一次性数据修正写 rename 命令违反"最小改动"原则
+- 保留两条 `count=1` 过细条目作为**教训化石**，以后翻 L0 还能看到规则诞生的起点
+- 下次同类任务直接用 `linktree_pipeline` 从 0 累积，Forger 触发路径仍能正常验证
+
+#### 设计洞察
+
+这是纯使用模式下**真实数据第一次暴露设计缺陷**——不是靠主观 review，而是靠 "为什么 7 条记录没一条到 2" 反推出来的。规则修复中的所有反面示例都来自真实 L0，不是虚构——这种"从数据里长出来的规则"比任何设计层 review 都可信。
+
+验证了 v0.2.9-review "进入纯使用模式" 决策的正确性：继续设计层 review 只会找到 P2/P3 小问题，而真实使用 7 次就暴露了 P1 级（阻碍核心 Forger 机制生效）问题。
 
 ---
 

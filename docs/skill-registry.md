@@ -262,7 +262,15 @@ Phase 4 评估完成后，`skill.avg_effectiveness` 按 EMA 更新：
 
 **Q：task_types 写什么值？**
 
-由 Agent 在 Phase 4 基于语义自行命名（snake_case），不限枚举。常见值：`refactoring` · `architecture_review` · `writing` · `research` · `code_generation` · `debugging` · `design` · `seo_analysis` · `cwd_integration_test` 等。
+由 Agent 在 Phase 4 基于语义自行命名（snake_case），不限枚举。常见值：`refactoring` · `architecture_review` · `writing` · `research` · `code_generation` · `debugging` · `design` · `seo_analysis` · `linktree_pipeline` · `video_generation` 等。
+
+**命名粒度约束（v0.2.9-patch+）**：
+
+- **2-3 个词**，领域+类型的抽象组合，**不含具体动作或项目细节**
+- ✅ 正确：`refactoring` · `figma_to_code` · `linktree_pipeline`
+- ❌ 错误：`video_linktree_analysis_implementation`（太细，count 永远停 1）· `fix_config_path_bug`（项目细节，不可复用）
+- 判断标准：**同类工作换个项目，这个标签还能用吗？** 能 → 合格
+- 过细命名是 Forger 不触发的头号原因（每次名字都不一样，count 永远在 1）
 
 **Q：capability_gains 的数值代表什么？**
 

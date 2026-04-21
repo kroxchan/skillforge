@@ -118,6 +118,13 @@ sf update-l0 \
 
 3. 若 `rating=1`，`sf update-l0` 自动追加反思模板骨架到 `memory/reflections.md`
 
+**task_type 命名粒度（关键）**：
+- **2-3 个词** 的抽象组合，领域+类型，不含具体动作/项目细节
+- ✅ `refactoring` · `architecture_review` · `figma_to_code` · `linktree_pipeline` · `video_generation`
+- ❌ `video_linktree_analysis_implementation`（4 词+动词，太细）· `fix_config_path_bug`（项目细节）
+- 判断标准：同类工作**换个项目**还能用这个 task_type 吗？能 → 合格
+- 过细命名会让 count 永远停在 1，Forger 永远不触发（阻碍涌现）
+
 **自创建 Skill 触发**：同一 task_type 累计 count ≥ 5 次时，Forger 自动生成 `memory/self-made/{task_type}-draft-{date}.md` 草稿。用户审核后用 `sf push` 入库。
 
 ## Skill Registry
