@@ -257,6 +257,7 @@ SkillForge 的优先级高于具体 skill：先分析缺口，再决定用哪个
 
 ## 更新日志
 
+- **2026-04-23 v0.2.10**: 同会话纠错体系（Layer 1 + Layer 3）——纯使用模式第二次真实反馈暴露设计空白：reflections.md 自建档起完全空白，L0 九条记录全 rating=3，"同会话多轮纠错"这个最常见场景从未触发过任何学习机制。新增 **会话约束栈**（Active Constraints 清单，用户强调的硬性约束在工作记忆维护，输出前强制自检）；**Phase 4 同会话补触发**（rating=1 条件扩展到"又错了/还是错/我刚说过/第 N 次"等重复犯错信号）；反思 root cause 新增第 4 维"约束自检是否跑了"。零代码，只改 mdc + 文档。Layer 2（跨会话 reflections 注入）作为 Round 2 待办
 - **2026-04-17 v0.2.9-patch**: 纯使用模式下首次真实数据驱动的规则修复——L0 出现两条过细 task_type（`video_linktree_analysis_implementation` / `linktree_page_pipeline`，同义却不合并）；mdc Phase 4 `task_type 选择规则` 新增粒度约束（2-3 词 / 领域+类型 / 不含项目细节），附真实错误示例；三份文档同步（AGENTS.md / cursor-integration.md / skill-registry.md）；历史过细条目作为"教训化石"保留不改
 - **2026-04-17 v0.2.9-review**: 第七轮复审首次 P0/P1 归零，综合分 82（项目最高）；建议进入"纯使用模式"收集真实数据后再 review
 - **2026-04-17 v0.2.8**: 修复 Cursor 路径 Phase 4 从未真正工作的根因 bug——`_find_project_root()` 添加 `__file__` fallback，`Config.load()` 绝对化 storage 路径，确保 `sf` 命令在任意 CWD 下可用；mdc 补充"先 Phase 4 再 Phase 1"触发时机契约；新增 `sf search` 扫描 `memory/self-made/` 草稿；新增 `DEFAULT_TASK_TYPE` 常量；新增 `tests/test_cwd_independence.py`（8 项集成测试）；全量 **159 测试通过**（FIX-058~067）

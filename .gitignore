@@ -52,3 +52,4 @@ htmlcov/
 # Distribution
 *.tar.gz
 *.whl
+memory/sessions/

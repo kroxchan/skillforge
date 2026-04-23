@@ -63,9 +63,17 @@ task_type_index:
     gap_adjustment: 0
     # [sf-f86cd744] 2026-04-20T17:55 Linktree scrape+import+register hailey_dlynn UAT | S=80 | rating=3 | delta=+0
 
+
+  linktree_pipeline:
+    count: 1
+    avg_delta: 0.00
+    trend: stable
+    gap_adjustment: 0
+    # [sf-72d851de] 2026-04-22T19:56 continue experience pipeline after quota | S=75 | rating=3 | delta=+0
+
 _meta:
   version: "1.0"
-  updated_at: "2026-04-21"
-  last_task_id: sf-1b14cd35
-  total_executed: 8
+  updated_at: "2026-04-22"
+  last_task_id: sf-72d851de
+  total_executed: 9
   global_gap_adjustment: 0
